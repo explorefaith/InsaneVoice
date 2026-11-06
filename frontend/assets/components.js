@@ -294,6 +294,77 @@ export function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+const TRASH_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/>
+  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+  <path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
+
+const PLAY_SVG = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>`;
+const DL_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+  stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/>
+  <path d="M4 21h16"/></svg>`;
+
+export function iconBtn(kind = "trash", title = "", cls = "btn sm icon") {
+  const svg = kind === "trash" ? TRASH_SVG : kind === "play" ? PLAY_SVG : DL_SVG;
+  return `<button class="${cls}" title="${esc(title)}" aria-label="${esc(title)}">${svg}</button>`;
+}
+
+/* page header with actions pinned to the right */
+export function pageHead(title, sub, kicker, actionsHTML = "") {
+  return `
+    <div class="page-head-row">
+      <div class="page-head">
+        ${kicker ? `<div class="kicker">${esc(kicker)}</div>` : ""}
+        <h1>${esc(title)}</h1>
+        ${sub ? `<p>${esc(sub)}</p>` : ""}
+      </div>
+      ${actionsHTML ? `<div class="head-actions">${actionsHTML}</div>` : ""}
+    </div>`;
+}
+
+/* language labels used across selects */
+export const LANG_LABELS = {
+  en: "English", es: "Español", fr: "Français", zh: "中文", ja: "日本語",
+  ko: "한국어", bn: "বাংলা (Bangla)", hi: "हिन्दी", ar: "العربية",
+  de: "Deutsch", pt: "Português", ru: "Русский", it: "Italiano",
+  tr: "Türkçe", vi: "Tiếng Việt", id: "Bahasa Indonesia", nl: "Nederlands",
+  pl: "Polski", ur: "اردو", ta: "தமிழ்", te: "తెలుగు", ml: "മലയാളം",
+  mr: "मराठी", gu: "ગુજરાતી", kn: "ಕನ್ನಡ", pa: "ਪੰਜਾਬੀ", sw: "Kiswahili",
+  ne: "नेपाली", as: "অসমীয়া", or: "ଓଡ଼ିଆ", si: "සිංහල", th: "ไทย",
+  fil: "Filipino", other: "Other",
+};
+
+export function langLabel(code) {
+  return LANG_LABELS[code] || code || "Other";
+}
+
+/* grouped <options> for voice selects, grouped by language */
+export function groupedVoiceOptions(voices, selectedId, includeBlank = false) {
+  if (!voices.length) return `<option value="">— create a voice first —</option>`;
+  const groups = new Map();
+  for (const v of voices) {
+    const g = v.language || "other";
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(v);
+  }
+  const order = Object.keys(LANG_LABELS);
+  const keys = [...groups.keys()].sort((a, b) => {
+    const ia = order.indexOf(a), ib = order.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b);
+  });
+  let html = includeBlank ? `<option value="">— pick a voice —</option>` : "";
+  for (const k of keys) {
+    html += `<optgroup label="${esc(langLabel(k))}">`;
+    for (const v of groups.get(k)) {
+      html += `<option value="${esc(v.id)}" ${v.id === selectedId ? "selected" : ""}>
+        ${esc(v.name)}${v.verified ? " ✓" : ""}</option>`;
+    }
+    html += `</optgroup>`;
+  }
+  return html;
+}
+
 export function fmtDur(s) {
   if (s == null) return "—";
   const m = Math.floor(s / 60), sec = Math.round(s % 60);

@@ -311,8 +311,13 @@ PAINTERS = {
 def render_scene(scene: dict, audio_path: Path | None, out_path: Path,
                  workdir: Path, size=(1280, 720), fps: int = FPS,
                  progress=None) -> Path:
-    """Render one scene mp4 (h264 + its own audio)."""
+    """Render one scene mp4 (h264 + its own audio).
+    ui_* scene types delegate to the UI-demo renderer (motion_ui)."""
     global W, H
+    if (scene.get("type") or "").startswith("ui_"):
+        from motion_ui import render_ui_scene
+        return render_ui_scene(scene, audio_path, out_path, workdir,
+                               fps=fps, progress=progress)
     W, H = size
     dur = float(scene.get("duration") or 4.0)
     frames_n = max(int(dur * fps), fps)

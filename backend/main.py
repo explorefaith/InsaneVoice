@@ -30,6 +30,15 @@ sys.path.insert(0, str(config.BACKEND_DIR))
 
 app = FastAPI(title=config.APP_NAME, version="2.0.0")
 
+
+@app.middleware("http")
+async def _no_static_cache(request, call_next):
+    resp = await call_next(request)
+    p = request.url.path
+    if p == "/" or p.startswith("/static"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
 ALLOWED_EXT = {".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac", ".opus", ".aac"}
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
 AUDIO_MEDIA = "audio/wav"
@@ -141,7 +150,7 @@ def system():
         "stt": {"available": stt_mod.available(),
                 "models": sorted({d.name for d in (config.MODELS_DIR / "vosk").glob("vosk-model-*")}
                                  if (config.MODELS_DIR / "vosk").exists() else [])},
-        "languages": {k: v["label"] for k, v in langs.LANGS.items()},
+        "languages": langs.all_lang_list(),
         "voices": len(storage.list_voices()),
         "data_dir": str(config.DATA_DIR),
     })

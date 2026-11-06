@@ -4,7 +4,7 @@
 import { API, state, refreshVoices, nav, render } from "./app.js";
 import {
   toast, modal, confirmModal, sk, busy, WaveBox,
-  esc, fmtDur, fmtWhen, download,
+  esc, fmtDur, fmtWhen, download, pageHead, iconBtn, langLabel, groupedVoiceOptions,
 } from "./components.js";
 
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -85,7 +85,7 @@ export async function changer(page) {
   const voices = await voicesSafe();
   if (!voices.length) return noVoices(page, "Voice Changer", "Voices");
   page.innerHTML = shell(`
-    ${head("Voice Changer", "Keep the performance — borrow the tone. Upload any recording (your dramatic read, a laugh, a sigh in ANY language) and it comes out in the target voice.", "Voices")}
+    ${pageHead("Voice Changer", "Keep the performance — borrow the tone. Upload any recording (your dramatic read, a laugh, a sigh in ANY language) and it comes out in the target voice.", "Voices")}
     <div class="grid c2" style="gap:20px" id="vc-grid">
       <div class="panel">
         <div class="dropzone" id="vc-dz">
@@ -95,7 +95,7 @@ export async function changer(page) {
           <input type="file" id="vc-file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.webm" hidden>
         </div>
         <label class="field" style="margin-top:16px"><span>Target voice</span>
-          <select id="vc-voice">${voiceOpts(voices)}</select></label>
+          <select id="vc-voice">${groupedVoiceOptions(voices)}</select></label>
         <label class="field"><span>Clone strength</span>
           <div class="range-row">
             <input type="range" id="vc-tau" min="0.1" max="0.9" step="0.05" value="0.3">
@@ -145,7 +145,7 @@ export async function changer(page) {
 
 export async function isolate(page) {
   page.innerHTML = shell(`
-    ${head("Voice Isolator", "Strip room noise and hiss from any recording — useful before cloning a noisy sample.", "Tools")}
+    ${pageHead("Voice Isolator", "Strip room noise and hiss from any recording — useful before cloning a noisy sample.", "Tools")}
     <div class="grid c2" style="gap:20px" id="iso-grid">
       <div class="panel">
         <div class="dropzone" id="iso-dz">
@@ -200,7 +200,7 @@ export async function isolate(page) {
 
 export async function design(page) {
   page.innerHTML = shell(`
-    ${head("Voice Design", "Describe a voice in words — InsaneVoice sculpts it with a DSP feedback loop until the fingerprint matches, then saves it as a normal cloneable voice.", "Voices")}
+    ${pageHead("Voice Design", "Describe a voice in words — InsaneVoice sculpts it with a DSP feedback loop until the fingerprint matches, then saves it as a normal cloneable voice.", "Voices")}
     <div class="grid c2" style="gap:20px" id="vd-grid">
       <div class="panel">
         <label class="field"><span>Describe the voice</span>
@@ -319,7 +319,7 @@ const STT_LANGS = [
 
 export async function transcribe(page) {
   page.innerHTML = shell(`
-    ${head("Transcribe", "Offline speech-to-text (Vosk models, ~50MB, downloaded on first use per language).", "Tools")}
+    ${pageHead("Transcribe", "Offline speech-to-text (Vosk models, ~50MB, downloaded on first use per language).", "Tools")}
     <div class="grid c2" style="gap:20px" id="tr-grid">
       <div class="panel">
         <div class="dropzone" id="tr-dz">
@@ -390,7 +390,7 @@ export async function transcribe(page) {
 export async function dubbing(page) {
   const voices = await voicesSafe();
   page.innerHTML = shell(`
-    ${head("Dubbing Studio", "Upload a video or audio track — it is transcribed with word timings, you polish the lines, pick a voice per line, and the performance timing is preserved.", "Tools")}
+    ${pageHead("Dubbing Studio", "Upload a video or audio track — it is transcribed with word timings, you polish the lines, pick a voice per line, and the performance timing is preserved.", "Tools")}
     <div id="db-main" class="stack">
       <div class="panel">
         <div class="dropzone" id="db-dz">
@@ -449,7 +449,7 @@ export async function dubbing(page) {
               <input type="text" data-txt="${i}" value="${esc(s.text)}">
               <select data-voice="${i}">
                 <option value="">skip</option>
-                ${voices.map((v) => `<option value="${esc(v.id)}">${esc(v.name)}</option>`).join("")}
+                ${groupedVoiceOptions(voices)}
               </select>
             </div>`).join("")}
         </div>
@@ -693,7 +693,7 @@ export async function agent(page) {
   const voices = await voicesSafe();
   const conns = await API.get("/api/connections").then((r) => r.connections).catch(() => null);
   page.innerHTML = shell(`
-    ${head("Agent Studio", "One prompt → script → scenes → cloned narration → rendered video. Every stage streams live feedback and waits for your approval when asked.", "Agent")}
+    ${pageHead("Agent Studio", "One prompt → script → scenes → cloned narration → rendered video. Every stage streams live feedback and waits for your approval when asked.", "Agent")}
     ${!conns?.text?.base_url ? `<div class="banner warn">! <div><b>No text provider connected.</b> The Agent needs one LLM for scriptwriting — connect it below first.</div></div>` : ""}
     <div class="grid c2" style="gap:20px" id="ag-grid">
       <div class="panel">
@@ -703,7 +703,7 @@ export async function agent(page) {
           <label class="field"><span>Target duration (seconds)</span>
             <input type="text" id="ag-dur" value="60"></label>
           <label class="field"><span>Narration voice</span>
-            <select id="ag-voice">${voiceOpts(voices)}</select></label>
+            <select id="ag-voice">${groupedVoiceOptions(voices)}</select></label>
           <label class="field"><span>Audio source</span>
             <select id="ag-audio"><option value="local">Local cloned voice (free)</option>
               <option value="provider">Connected audio model</option></select></label>
@@ -895,6 +895,23 @@ export async function agent(page) {
 export async function connections(page) {
   const res = await API.get("/api/connections").catch(() => null);
   const c = res?.connections || {};
+  const modelsState = {};
+  for (const k of ["text", "audio", "visual"]) {
+    modelsState[k] = [...(c[k]?.models || [])];
+  }
+
+  const chipsHTML = (kind, v) => `
+    <label class="field"><span>Model IDs — failover order (add one or many)</span>
+      <div class="chips" data-chips="${kind}" data-empty="No models yet — add the first one below">
+        ${(v.models || []).map((m) => `
+          <span class="chip">${esc(m)}<button class="x" data-rm="${esc(m)}" title="Remove">✕</button></span>`).join("")}
+      </div>
+      <div class="chip-add">
+        <input type="text" data-newmodel="${kind}" placeholder="model id, e.g. gpt-4o-mini / gemini-2.0-flash / deepseek-chat">
+        <button class="btn sm" data-add="${kind}">＋ Add</button>
+      </div>
+    </label>`;
+
   const card = (kind, label, extra = "") => {
     const v = c[kind] || {};
     return `
@@ -902,18 +919,18 @@ export async function connections(page) {
         <div class="spread"><h3 style="margin:0">${esc(label)}</h3>
           <span class="pill ${v.has_key ? "ok" : ""}" data-state>${v.has_key ? "key saved" : "not configured"}</span></div>
         <label class="field"><span>Base URL (OpenAI-compatible)</span>
-          <input type="text" data-f="base_url" value="${esc(v.base_url || "")}" placeholder="https://api.openai.com/v1"></label>
+          <input type="url" data-f="base_url" value="${esc(v.base_url || "")}" placeholder="https://api.openai.com/v1"></label>
         <label class="field"><span>API key ${v.has_key ? "(saved — type to replace)" : ""}</span>
-          <input type="password" data-f="api_key" placeholder="${v.has_key ? "••••••••" : "sk-…"}"></label>
-        <label class="field"><span>Model IDs (comma separated — failover order)</span>
-          <input type="text" data-f="models" value="${esc((v.models || []).join(", "))}" placeholder="gpt-4o-mini, deepseek-chat, glm-4-flash"></label>
+          <input type="password" data-f="api_key" placeholder="${v.has_key ? "•••••••• (leave empty to keep)" : "sk-…"}"></label>
+        ${chipsHTML(kind, v)}
         ${extra}
-        <div class="row"><button class="btn sm" data-test>Test connection</button>
+        <div class="row" style="margin-top:14px"><button class="btn sm" data-test>Test connection</button>
           <span class="small muted" data-testmsg></span></div>
       </div>`;
   };
+
   page.innerHTML = shell(`
-    ${head("Connections", "Bring your own OpenAI-compatible endpoints. Keys stay in a local file on this machine — never in the cloud. If a model id fails, the agent retries the next one with the same context.", "Agent")}
+    ${pageHead("Connections", "Bring your own OpenAI-compatible endpoints. Keys stay in a local file on this machine — never in the cloud. If a model id fails, the agent retries the next one with the same context.", "Agent")}
     <div class="stack">
       ${card("text", "Text model — script writing",
         `<label class="checkbox"><input type="checkbox" data-f="vision" ${c.text?.vision ? "checked" : ""}>
@@ -928,6 +945,37 @@ export async function connections(page) {
       <span class="small muted" id="cn-msg"></span>
     </div>`);
 
+  const wireChips = () => {
+    $$("[data-add]", page).forEach((b) => {
+      b.onclick = () => {
+        const kind = b.dataset.add;
+        const input = $(`[data-newmodel="${kind}"]`, page);
+        const val = (input.value || "").trim();
+        if (!val) return;
+        for (const m of val.split(",").map((x) => x.trim()).filter(Boolean)) {
+          if (!modelsState[kind].includes(m)) modelsState[kind].push(m);
+        }
+        input.value = "";
+        renderChips(kind);
+      };
+    });
+    $$("[data-chips] .x", page).forEach((x) => {
+      x.onclick = () => {
+        const kind = x.closest("[data-chips]").dataset.chips;
+        modelsState[kind] = modelsState[kind].filter((m) => m !== x.dataset.rm);
+        renderChips(kind);
+      };
+    });
+  };
+
+  const renderChips = (kind) => {
+    const box = $(`[data-chips="${kind}"]`, page);
+    box.innerHTML = modelsState[kind].map((m) =>
+      `<span class="chip">${esc(m)}<button class="x" data-rm="${esc(m)}" title="Remove">✕</button></span>`).join("");
+    wireChips();
+  };
+  wireChips();
+
   const gather = () => {
     const out = {};
     $$(".panel[data-kind]", page).forEach((p) => {
@@ -936,7 +984,7 @@ export async function connections(page) {
       out[kind] = {
         base_url: g("base_url"),
         api_key: g("api_key") || "",
-        models: (g("models") || "").split(",").map((s) => s.trim()).filter(Boolean),
+        models: modelsState[kind] || [],
       };
       if (kind === "text") out[kind].vision = $('[data-f="vision"]', p)?.checked || false;
       if (kind === "audio") out[kind].voice = g("voice") || "";

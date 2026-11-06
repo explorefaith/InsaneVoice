@@ -3,7 +3,7 @@
 import { API, state, refreshSystem, refreshVoices, nav, render } from "./app.js";
 import {
   toast, modal, confirmModal, sk, busy, WaveBox, radarChart,
-  esc, fmtDur, fmtWhen, download,
+  esc, fmtDur, fmtWhen, download, pageHead, iconBtn, langLabel, groupedVoiceOptions,
 } from "./components.js";
 
 /* ============================================================
@@ -189,10 +189,10 @@ export async function studio(page, seq, fresh) {
   page.innerHTML = pageShell(`
     ${head("Studio", "Type anything. Your voice speaks it.", "Create")}
     ${state.system && !state.system.models_present ? banners.modelsMissing : ""}
-    <div class="grid" style="grid-template-columns: 1.5fr 1fr; gap:20px" id="st-grid">
+    <div class="grid balanced" id="st-grid">
       <div class="panel">
         <label class="field"><span>Voice</span>
-          <select id="st-voice">${voiceOptions(voices)}</select>
+          <select id="st-voice">${groupedVoiceOptions(voices)}</select>
         </label>
         <label class="field"><span>What should it say?</span>
           <textarea id="st-text" rows="7" placeholder="Write your script here — sentences are handled automatically."></textarea>
@@ -242,15 +242,11 @@ export async function studio(page, seq, fresh) {
           <hr class="thin">
           <label class="field"><span>Language</span>
             <select id="st-lang">
-              <option value="en">English</option>
-              <option value="es">Español</option>
-              <option value="fr">Français</option>
-              <option value="zh">中文</option>
-              <option value="ja">日本語</option>
-              <option value="ko">한국어</option>
+              ${(state.system?.languages ? Object.entries(state.system.languages) : [["en", "English"]])
+                .map(([k, l]) => `<option value="${esc(k)}">${esc(l)}</option>`).join("")}
             </select>
           </label>
-          <label class="field" style="margin:0"><span>Base accent (English only)</span>
+          <label class="field" style="margin:0" id="st-accent-wrap"><span>Speaker (English)</span>
             <select id="st-accent">
               <option value="en-us">American (EN-US)</option>
               <option value="en-br">British (EN-BR)</option>
@@ -269,6 +265,13 @@ export async function studio(page, seq, fresh) {
   `);
   if (window.innerWidth < 900)
     page.querySelector("#st-grid").style.gridTemplateColumns = "1fr";
+
+  const syncAccent = () => {
+    page.querySelector("#st-accent-wrap").style.display =
+      page.querySelector("#st-lang").value === "en" ? "" : "none";
+  };
+  page.querySelector("#st-lang").onchange = syncAccent;
+  syncAccent();
 
   const txt = page.querySelector("#st-text");
   const speed = page.querySelector("#st-speed");
@@ -636,190 +639,123 @@ export async function library(page, seq, fresh) {
   const voices = await needVoices();
   if (!fresh()) return;
   page.innerHTML = pageShell(`
-    ${head("Voice Library", "Every saved voice keeps its fingerprint, its reference audio and its own speaker embedding.", "Voices")}
-    <div class="spread" style="margin-bottom:16px">
-      <span class="small muted">${voices.length} voice${voices.length === 1 ? "" : "s"} stored locally</span>
-      <button class="btn accent" id="lib-add">＋ New voice</button>
+    ${pageHead("Voice Library",
+      "Every saved voice keeps its fingerprint, its reference audio and its own speaker embedding.",
+      "Voices",
+      `<span class="pill" id="lib-count"></span>
+       <button class="btn accent" id="lib-add">＋ New voice</button>`)}
+    <div class="row wrap" style="margin-bottom:16px">
+      <input type="search" id="lib-q" placeholder="Search voices…" style="max-width:280px">
+      <select id="lib-lang" style="max-width:220px">
+        <option value="">All languages</option>
+        ${[...new Set(voices.map((v) => v.language || "other"))]
+          .sort((a, b) => langLabel(a).localeCompare(langLabel(b)))
+          .map((l) => `<option value="${esc(l)}">${esc(langLabel(l))}</option>`).join("")}
+      </select>
+      <span class="grow"></span>
     </div>
     <div id="lib-grid" class="grid c3"></div>
   `);
   page.querySelector("#lib-add").onclick = () => addVoiceFlow();
   const grid = page.querySelector("#lib-grid");
 
-  if (!voices.length) {
-    grid.innerHTML = `
-      <div class="empty" style="grid-column:1/-1">
-        <div class="e-ico">☰</div>
-        <h3>No voices yet</h3>
-        <p>Record or import 10–30 seconds of speech. InsaneVoice turns it into a cloneable voice.</p>
-        <button class="btn accent" id="lib-first">Create your first voice</button>
-      </div>`;
-    grid.querySelector("#lib-first").onclick = () => addVoiceFlow();
-    return;
-  }
-
-  for (const v of voices) {
-    const card = document.createElement("div");
-    card.className = "voice-card";
-    const r = v.dna || { radar: {} };
-    const hot = (k) => Math.round(r.radar?.[k] ?? 0);
-    card.innerHTML = `
-      <div class="v-head">
-        <div class="v-ava">${esc((v.name || "?")[0].toUpperCase())}</div>
-        <div class="grow">
-          <h4>${esc(v.name)} ${v.verified ? `<span class="pill ok" title="Ownership verified by voice-match">✓ verified</span>` : ""}</h4>
-          <div class="v-sub">${esc(r.archetype || "unanalysed")} · ${fmtDur(v.duration)} · ${fmtWhen(v.created_at)}</div>
+  const draw = () => {
+    const q = (page.querySelector("#lib-q").value || "").toLowerCase();
+    const lang = page.querySelector("#lib-lang").value;
+    const shown = voices.filter((v) =>
+      (!lang || (v.language || "other") === lang) &&
+      (!q || (v.name || "").toLowerCase().includes(q) ||
+             (v.dna?.archetype || "").toLowerCase().includes(q)));
+    page.querySelector("#lib-count").textContent = `${shown.length} of ${voices.length} voices`;
+    grid.innerHTML = "";
+    if (!voices.length) {
+      grid.innerHTML = `
+        <div class="empty" style="grid-column:1/-1">
+          <div class="e-ico">☰</div>
+          <h3>No voices yet</h3>
+          <p>Record or import 10–30 seconds of speech. InsaneVoice turns it into a cloneable voice.</p>
+          <button class="btn accent" id="lib-first">Create your first voice</button>
+        </div>`;
+      grid.querySelector("#lib-first").onclick = () => addVoiceFlow();
+      return;
+    }
+    if (!shown.length) {
+      grid.innerHTML = `<div class="empty" style="grid-column:1/-1">
+        <div class="e-ico">🔍</div><h3>No match</h3><p>Try a different search or language.</p></div>`;
+      return;
+    }
+    for (const v of shown) {
+      const card = document.createElement("div");
+      card.className = "voice-card";
+      const r = v.dna || { radar: {} };
+      const hot = (k) => Math.round(r.radar?.[k] ?? 0);
+      card.innerHTML = `
+        <div class="v-head">
+          <div class="v-ava">${esc((v.name || "?")[0].toUpperCase())}</div>
+          <div class="grow">
+            <h4>${esc(v.name)} ${v.verified ? `<span class="pill ok" title="Ownership verified by voice-match">✓ verified</span>` : ""}</h4>
+            <div class="v-sub">${esc(langLabel(v.language || "other"))} · ${esc(r.archetype || "unanalysed")} · ${fmtDur(v.duration)}</div>
+          </div>
         </div>
-      </div>
-      <div class="dna-bars">
-        ${[["pitch", hot("pitch")], ["warmth", hot("warmth")], ["brightness", hot("brightness")], ["grit", hot("roughness")]]
-        .map(([k, val]) => `
-          <div class="dna-bar ${k === "pitch" ? "hot" : ""}">
-            <span>${k}</span>
-            <span class="bar"><i style="width:${val}%"></i></span>
-          </div>`).join("")}
-      </div>
-      <div class="row">
-        <button class="btn sm accent" data-act="preview" title="Generate a greeting in this voice">✦ Preview</button>
-        <button class="btn sm" data-act="sample" title="Listen to the reference sample">▶ Sample</button>
-        ${v.verified ? "" : `<button class="btn sm" data-act="verify" title="Prove ownership: read 5 random words, we compare voice metrics">✓ Verify</button>`}
-        <span class="grow"></span>
-        <button class="btn sm danger" data-act="del" title="Delete voice">🗑</button>
-      </div>
-      <div data-out></div>`;
-    card.querySelector('[data-act="preview"]').onclick = async (e) => {
-      const out = card.querySelector("[data-out]");
-      out.innerHTML = `<div class="progress indet" style="margin-top:10px"><i></i></div>
-        <div class="progress-label"><span>Generating greeting…</span><span>CPU</span></div>`;
-      busy(e.currentTarget, true);
-      try {
-        const res = await API.post(`/api/voices/${v.id}/preview`, {});
-        out.innerHTML = "";
-        out.appendChild(audioCard(res.generation));
-      } catch (err) {
-        out.innerHTML = "";
-        toast("Preview failed", err.message, "err");
-      } finally { busy(e.currentTarget, false); }
-    };
-    card.querySelector('[data-act="sample"]').onclick = (e) => {
-      const out = card.querySelector("[data-out]");
-      out.innerHTML = "";
-      const wb = new WaveBox(out, v.sample_url, { height: 56 });
-      wb.load();
-      e.currentTarget.textContent = "■ Stop";
-      wb.onPlayState = (playing) => {
-        e.currentTarget.textContent = playing ? "■ Stop" : "▶ Sample";
-      };
-      wb.toggle();
-    };
-    const verifyBtn = card.querySelector('[data-act="verify"]');
-    if (verifyBtn) verifyBtn.onclick = () => verifyModal(v);
-
-    card.querySelector('[data-act="del"]').onclick = async () => {
-      if (await confirmModal("Delete voice?", `“${v.name}” and its fingerprint will be removed from this machine. Generated audio stays in History.`, "Delete")) {
-        try {
-          await API.del(`/api/voices/${v.id}`);
-          toast("Voice deleted", v.name);
-          render();
-        } catch (err) { toast("Delete failed", err.message, "err"); }
-      }
-    };
-    grid.appendChild(card);
-  }
-}
-
-/* add-voice flow: pick file (or go record), preview info, consent modal */
-function addVoiceFlow() {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "audio/*,.wav,.mp3,.m4a,.ogg,.webm,.flac";
-  input.onchange = () => {
-    if (input.files[0]) saveVoiceModal(input.files[0], null);
-  };
-  input.click();
-}
-
-/* ownership verification: read 5 random words → voice-metric match */
-async function verifyModal(v) {
-  const ch = await API.get(`/api/voices/${v.id}/challenge`);
-  const body = document.createElement("div");
-  body.innerHTML = `
-    <p class="small" style="margin-top:0">Read these words aloud, naturally, in the same
-    setting as your original sample. InsaneVoice compares <b>voice metrics</b> — pitch,
-    brightness, formants — not the words themselves.</p>
-    <div class="panel" style="text-align:center;font-family:var(--serif);font-size:21px;
-         letter-spacing:1px;background:var(--paper)">
-      ${ch.words.map((w) => esc(w)).join(" · ")}
-    </div>
-    <div class="rec-stage" style="padding:16px 0 4px">
-      <button class="rec-btn" id="vr-btn" style="width:70px;height:70px;font-size:24px">●</button>
-      <div class="rec-timer" id="vr-timer" style="font-size:22px">00:00</div>
-      <div class="small muted" id="vr-hint">Press to record, read the words, press again.</div>
-    </div>
-    <div id="vr-result"></div>`;
-  const foot = document.createElement("div");
-  foot.innerHTML = `
-    <button class="btn ghost" data-a="c">Later</button>
-    <button class="btn accent" data-a="check" disabled>✓ Submit check</button>`;
-  modal({
-    title: `Verify “${v.name}”`, body, footer: foot,
-    onMount: (veil, close) => {
-      let media = null, stream = null, chunks = [], t0 = 0, iv = null;
-      const btn = $("#vr-btn", veil), timer = $("#vr-timer", veil),
-            hint = $("#vr-hint", veil), check = $('[data-a="check"]', veil);
-      btn.onclick = async () => {
-        if (media && media.state === "recording") { media.stop(); return; }
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        } catch {
-          hint.textContent = "Microphone blocked — allow access and retry.";
-          return;
-        }
-        chunks = [];
-        media = new MediaRecorder(stream);
-        media.ondataavailable = (e) => chunks.push(e.data);
-        media.onstop = () => {
-          stream.getTracks().forEach((t) => t.stop());
-          clearInterval(iv);
-          btn.classList.remove("recording");
-          btn.textContent = "●";
-          check.disabled = false;
-          hint.textContent = `Captured ${Math.round((Date.now() - t0) / 1000)}s — submit when ready.`;
-          veil._file = new File([new Blob(chunks)], "challenge.webm", { type: "audio/webm" });
-        };
-        media.start();
-        btn.classList.add("recording");
-        btn.textContent = "■";
-        t0 = Date.now();
-        iv = setInterval(() => {
-          const s = Math.floor((Date.now() - t0) / 1000);
-          timer.textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-        }, 250);
-      };
-      $('[data-a="c"]', veil).onclick = close;
-      check.onclick = async (e) => {
-        if (!veil._file) return;
+        <div class="dna-bars">
+          ${[["pitch", hot("pitch")], ["warmth", hot("warmth")], ["brightness", hot("brightness")], ["grit", hot("roughness")]]
+          .map(([k, val]) => `
+            <div class="dna-bar ${k === "pitch" ? "hot" : ""}">
+              <span>${k}</span>
+              <span class="bar"><i style="width:${val}%"></i></span>
+            </div>`).join("")}
+        </div>
+        <div class="row">
+          <button class="btn sm accent" data-act="preview" title="Generate a greeting in this voice">✦ Preview</button>
+          <button class="btn sm" data-act="sample" title="Listen to the reference sample">▶ Sample</button>
+          ${v.verified ? "" : `<button class="btn sm" data-act="verify" title="Prove ownership: read 5 random words, we compare voice metrics">✓ Verify</button>`}
+          <span class="grow"></span>
+          ${iconBtn("trash", "Delete this voice", "btn sm icon")}
+        </div>
+        <div data-out></div>`;
+      card.querySelector('[data-act="preview"]').onclick = async (e) => {
+        const out = card.querySelector("[data-out]");
+        out.innerHTML = `<div class="progress indet" style="margin-top:10px"><i></i></div>
+          <div class="progress-label"><span>Generating greeting…</span><span>CPU</span></div>`;
         busy(e.currentTarget, true);
         try {
-          const fd = new FormData();
-          fd.append("file", veil._file);
-          const res = await API.postForm(`/api/voices/${v.id}/verify`, fd);
-          const r = res.verification;
-          $("#vr-result", veil).innerHTML = `
-            <div class="banner ${r.passed ? "ok" : "err"}" style="margin-top:12px">
-              ${r.passed ? "✓" : "✕"} <div><b>${r.passed ? "Verified!" : "Not matched."}</b><br>
-              ${esc(r.note)}<br>
-              <span class="small muted">${r.checks.map((c) =>
-                `${c.metric}: ${c.pass ? "pass" : "fail"}`).join(" · ")}</span></div>
-            </div>`;
-          if (r.passed) { check.disabled = true; check.textContent = "✓ Verified"; }
-          await refreshVoices();
+          const res = await API.post(`/api/voices/${v.id}/preview`, {});
+          out.innerHTML = "";
+          out.appendChild(audioCard(res.generation));
         } catch (err) {
-          toast("Verify failed", err.message, "err");
+          out.innerHTML = "";
+          toast("Preview failed", err.message, "err");
         } finally { busy(e.currentTarget, false); }
       };
-    },
-  });
+      card.querySelector('[data-act="sample"]').onclick = (e) => {
+        const out = card.querySelector("[data-out]");
+        out.innerHTML = "";
+        const wb = new WaveBox(out, v.sample_url, { height: 56 });
+        wb.load();
+        e.currentTarget.textContent = "■ Stop";
+        wb.onPlayState = (playing) => {
+          e.currentTarget.textContent = playing ? "■ Stop" : "▶ Sample";
+        };
+        wb.toggle();
+      };
+      const verifyBtn = card.querySelector('[data-act="verify"]');
+      if (verifyBtn) verifyBtn.onclick = () => verifyModal(v);
+
+      card.querySelector(".btn.icon").onclick = async () => {
+        if (await confirmModal("Delete voice?", `“${v.name}” and its fingerprint will be removed from this machine. Generated audio stays in History.`, "Delete")) {
+          try {
+            await API.del(`/api/voices/${v.id}`);
+            toast("Voice deleted", v.name);
+            render();
+          } catch (err) { toast("Delete failed", err.message, "err"); }
+        }
+      };
+      grid.appendChild(card);
+    }
+  };
+  page.querySelector("#lib-q").oninput = draw;
+  page.querySelector("#lib-lang").onchange = draw;
+  draw();
 }
 
 /* ============================================================
@@ -838,7 +774,7 @@ export async function batch(page, seq, fresh) {
     <div class="grid c2" style="gap:20px" id="bt-grid">
       <div class="panel">
         <label class="field"><span>Voice</span>
-          <select id="bt-voice">${voiceOptions(voices)}</select>
+          <select id="bt-voice">${groupedVoiceOptions(voices)}</select>
         </label>
         <label class="field"><span>Lines — one clip per line</span>
           <textarea id="bt-text" rows="10"></textarea>
@@ -928,7 +864,7 @@ export async function history(page, seq, fresh) {
   const items = await API.get("/api/history?limit=200").then((r) => r.history).catch(() => []);
   if (!fresh()) return;
   page.innerHTML = pageShell(`
-    ${head("History", "Every generation stays on this machine until you delete it.", "Library")}
+    ${pageHead("History", "Every generation stays on this machine until you delete it.", "System")}
     <div class="panel flush" id="h-list"></div>
   `);
   const list = page.querySelector("#h-list");
@@ -950,7 +886,7 @@ export async function history(page, seq, fresh) {
       <div class="acts">
         <button class="btn sm" data-act="play" data-u="${h.audio_url}">▶</button>
         <button class="btn sm" data-act="dl" data-u="${h.audio_url}" data-n="${esc(h.voice_name)}_${h.id}.wav">⬇</button>
-        <button class="btn sm danger" data-act="del" data-id="${h.id}">✕</button>
+        ${iconBtn("trash", "Delete this entry", "btn sm icon")}
       </div>
     </div>`).join("");
   list.querySelectorAll('[data-act="play"]').forEach((b) =>
@@ -986,7 +922,7 @@ export async function settings(page, seq, fresh) {
     ["Data folder", s?.data_dir || "—"],
   ];
   page.innerHTML = pageShell(`
-    ${head("Settings", "InsaneVoice is fully local — no account, no cloud, no API keys.", "Library")}
+    ${pageHead("Settings", "InsaneVoice is fully local — no account, no cloud, no API keys.", "System")}
     <div class="panel">
       <h3 style="margin:0 0 10px">System</h3>
       <table class="stat-table">
@@ -1019,7 +955,7 @@ export async function settings(page, seq, fresh) {
 
 export async function help(page, seq, fresh) {
   page.innerHTML = pageShell(`
-    ${head("How InsaneVoice works", "Three moves from your real voice to a synthetic one — all offline, all free.", "Library")}
+    ${pageHead("How InsaneVoice works", "Three moves from your real voice to a synthetic one — all offline, all free.", "System")}
     <div class="grid c2" style="gap:20px">
       <div class="panel">
         <div class="steps">

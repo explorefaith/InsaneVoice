@@ -152,7 +152,12 @@ def extract_speaker_embedding(wav_path: str | Path, save_path: str | Path) -> Pa
 def generate(text: str, tgt_se_path: str | Path, out_path: str | Path,
              speed: float = 1.0, tau: float = 0.3,
              accent: str | None = None, lang: str = "en") -> Path:
-    """Full pipeline: text -> base speech -> tone transfer -> final wav."""
+    """Full pipeline: text -> base speech -> tone transfer -> final wav.
+
+    lang routing: melo languages (en/es/fr/zh/ja/ko) use the MeloTTS pool;
+    MMS languages (bn/hi/ar/...) use facebook/mms-tts with a dynamic
+    source embedding taken from the base render itself.
+    """
     global _converter
     ensure_loaded(block=True)
     if STATE["status"] != "ready":
@@ -166,25 +171,35 @@ def generate(text: str, tgt_se_path: str | Path, out_path: str | Path,
     L = langs.get(lang)
     with _lock:
         t0 = time.time()
-        _load_tts(lang)
         STATE["active_lang"] = lang
         STATE["detail"] = f"Speaking {L['label']}..."
         tmp_base = out_path.with_name(out_path.stem + "_base.wav")
 
-        tts = _tts_pool[lang]
-        spk_ids = tts.hps.data.spk2id
-        if lang == "en":
-            spk = "EN-US" if (accent in (None, "en-us")) else "EN-BR"
-            spk = spk if spk in spk_ids else list(spk_ids)[0]
+        if langs.is_mms(lang):
+            mms_generate(text, langs.MMS_ISO[lang.lower()], tmp_base, speed=speed)
         else:
-            spk = list(spk_ids)[0]
-        tts.tts_to_file(text, spk_ids[spk], str(tmp_base), speed=float(speed))
+            _load_tts(lang)
+            tts = _tts_pool[lang]
+            spk_ids = dict(tts.hps.data.spk2id)
+            if lang == "en":
+                spk = "EN-US" if (accent in (None, "en-us")) else "EN-BR"
+                spk = spk if spk in spk_ids else list(spk_ids)[0]
+            else:
+                spk = list(spk_ids)[0]
+            tts.tts_to_file(text, spk_ids[spk], str(tmp_base), speed=float(speed))
 
         import torch
         tgt_se = torch.load(str(tgt_se_path), map_location="cpu", weights_only=True)
+        if langs.is_mms(lang):
+            # dynamic source embedding from the base render
+            src_tmp = out_path.with_name(out_path.stem + "_srcse.pth")
+            _converter.extract_se([str(tmp_base)], str(src_tmp))
+            src_se = torch.load(str(src_tmp), map_location="cpu", weights_only=True)
+            src_tmp.unlink(missing_ok=True)
+        else:
+            src_se = _src_se(lang, accent if lang == "en" else None)
         _converter.convert(audio_src_path=str(tmp_base),
-                           src_se=_src_se(lang, accent if lang == "en" else None),
-                           tgt_se=tgt_se,
+                           src_se=src_se, tgt_se=tgt_se,
                            output_path=str(out_path),
                            tau=float(tau), message="InsaneVoice")
         try:
@@ -193,6 +208,49 @@ def generate(text: str, tgt_se_path: str | Path, out_path: str | Path,
             pass
         STATE["detail"] = "Engine ready."
         print(f"[engine] generated {lang} in {time.time() - t0:.1f}s -> {out_path.name}", flush=True)
+        return out_path
+
+
+# ---------------- MMS (Meta) multilingual base TTS ----------------
+
+_mms_cache: "OrderedDict[str, tuple]" = OrderedDict()
+MMS_MAX = 2
+
+
+def mms_generate(text: str, iso: str, out_path: str | Path, speed: float = 1.0) -> Path:
+    """Render base speech with facebook/mms-tts-<iso> (downloads on first use)."""
+    import torch
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with _lock:
+        if iso not in _mms_cache:
+            STATE["detail"] = f"Preparing MMS-{iso} model (first use downloads ~150MB)..."
+            print(f"[engine] loading MMS model mms-tts-{iso}", flush=True)
+            from transformers import VitsModel, AutoTokenizer
+            name = f"facebook/mms-tts-{iso}"
+            model = VitsModel.from_pretrained(name)
+            tok = AutoTokenizer.from_pretrained(name)
+            model.eval()
+            _mms_cache[iso] = (model, tok)
+            while len(_mms_cache) > MMS_MAX:
+                _mms_cache.popitem(last=False)
+        model, tok = _mms_cache[iso]
+        inputs = tok(text, return_tensors="pt")
+        with torch.no_grad():
+            wave = model(**inputs).waveform.squeeze().numpy()
+        import soundfile as sf
+        tmp16 = out_path.with_name(out_path.stem + "_16k.wav")
+        sf.write(str(tmp16), wave, model.config.sampling_rate)
+        # 16k -> 22050 mono, with optional tempo fit
+        import subprocess
+        af = "anull"
+        if abs(speed - 1.0) > 1e-3:
+            v = min(2.0, max(0.5, speed))
+            af = f"atempo={v:.4f}"
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(tmp16),
+                        "-af", af, "-ar", "22050", "-ac", "1", str(out_path)],
+                       check=True, capture_output=True, timeout=600)
+        tmp16.unlink(missing_ok=True)
         return out_path
 
 
