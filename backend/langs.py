@@ -61,6 +61,7 @@ DEFAULT_LANG = "en"
 # Meta MMS-TTS languages (facebook/mms-tts-<iso>) — 36M-param VITS models,
 # CPU-friendly, downloaded on first use. Covers Bangla + dozens more.
 MMS_ISO = {
+    "ko": "kor",  # Korean via MMS (melo-KR needs a fragile mecab-ko chain)
     "bn": "ben", "hi": "hin", "ar": "ara", "de": "deu", "pt": "por",
     "ru": "rus", "it": "ita", "tr": "tur", "vi": "vie", "id": "ind",
     "nl": "nld", "pl": "pol", "ur": "urd", "ta": "tam", "te": "tel",

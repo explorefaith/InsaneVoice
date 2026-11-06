@@ -36,7 +36,7 @@ PLAN = {
     "fr": ("melo", PRESETS[:6]),
     "zh": ("melo", PRESETS[:6]),
     "ja": ("melo", PRESETS[:6]),
-    "ko": ("melo", PRESETS[:6]),
+    "ko": ("mms", PRESETS[:4]),
     "bn": ("mms", PRESETS[:4]),
     "hi": ("mms", PRESETS[:4]),
     "ar": ("mms", PRESETS[:3]),
@@ -77,16 +77,21 @@ def main():
         base.parent.mkdir(parents=True, exist_ok=True)
         if not base.exists():
             print(f"[seed] {label}: rendering base sentence ({kind})...", flush=True)
-            if kind == "melo":
-                engine.ensure_loaded(block=True)
-                with engine._lock:
-                    engine._load_tts(lang)
-                    tts = engine._tts_pool[lang]
-                    spk_ids = dict(tts.hps.data.spk2id)
-                    spk = ("EN-US" if lang == "en" else list(spk_ids)[0])
-                    tts.tts_to_file(sentence, spk_ids[spk], str(base), speed=1.0)
-            else:
-                engine.mms_generate(sentence, langs.MMS_ISO[lang], base)
+            try:
+                if kind == "melo":
+                    engine.ensure_loaded(block=True)
+                    with engine._lock:
+                        engine._load_tts(lang)
+                        tts = engine._tts_pool[lang]
+                        spk_ids = dict(tts.hps.data.spk2id)
+                        spk = ("EN-US" if lang == "en" else list(spk_ids)[0])
+                        tts.tts_to_file(sentence, spk_ids[spk], str(base), speed=1.0)
+                else:
+                    engine.mms_generate(sentence, langs.MMS_ISO[lang], base)
+            except Exception as e:
+                print(f"[seed] SKIP {label} — base render failed: {str(e)[:120]}", flush=True)
+                total -= len(presets)
+                continue
         else:
             print(f"[seed] {label}: base cached", flush=True)
 
