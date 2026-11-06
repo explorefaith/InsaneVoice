@@ -197,7 +197,20 @@ export async function studio(page, seq, fresh) {
         <label class="field"><span>What should it say?</span>
           <textarea id="st-text" rows="7" placeholder="Write your script here — sentences are handled automatically."></textarea>
         </label>
-        <div class="small muted" style="margin:-6px 0 14px">
+        <div class="row wrap" style="margin:-6px 0 12px" id="st-chips">
+          <span class="small muted">insert:</span>
+          <button class="btn sm ghost" data-tag="[pause 0.5]">[pause]</button>
+          <button class="btn sm ghost" data-tag="[sigh]">[sigh]</button>
+          <button class="btn sm ghost" data-tag="[gasp]">[gasp]</button>
+          <button class="btn sm ghost" data-tag="[breath]">[breath]</button>
+          <button class="btn sm ghost" data-tag="[happy]" data-close="[/happy]">happy span</button>
+          <button class="btn sm ghost" data-tag="[sad]" data-close="[/sad]">sad span</button>
+          <button class="btn sm ghost" data-tag="[excited]" data-close="[/excited]">excited</button>
+          <button class="btn sm ghost" data-tag="[whisper]" data-close="[/whisper]">whisper</button>
+        </div>
+        <label class="checkbox" style="margin-bottom:14px"><input type="checkbox" id="st-emotional">
+          <span>Render emotion tags &amp; non-verbals <span class="muted">(adds a little render time)</span></span></label>
+        <div class="small muted" style="margin:-4px 0 14px">
           CPU speed ≈ 3–4× the audio length. A 10s clip takes ~30–40s.
         </div>
         <div class="row wrap">
@@ -227,7 +240,17 @@ export async function studio(page, seq, fresh) {
             0.3 is the balanced default.
           </div>
           <hr class="thin">
-          <label class="field" style="margin:0"><span>Base accent</span>
+          <label class="field"><span>Language</span>
+            <select id="st-lang">
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="zh">中文</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+            </select>
+          </label>
+          <label class="field" style="margin:0"><span>Base accent (English only)</span>
             <select id="st-accent">
               <option value="en-us">American (EN-US)</option>
               <option value="en-br">British (EN-BR)</option>
@@ -254,6 +277,28 @@ export async function studio(page, seq, fresh) {
   tau.oninput = () => page.querySelector("#st-tau-o").textContent = (+tau.value).toFixed(2);
   page.querySelector("#st-clear").onclick = () => { txt.value = ""; txt.focus(); };
 
+  // emotion tag chips: insert at cursor, wrap when the chip has a closing tag
+  page.querySelectorAll("#st-chips [data-tag]").forEach((chip) => {
+    chip.onclick = () => {
+      const open = chip.dataset.tag;
+      const close = chip.dataset.close || "";
+      const s = txt.selectionStart ?? txt.value.length;
+      const e = txt.selectionEnd ?? s;
+      const sel = txt.value.slice(s, e);
+      const insert = sel ? `${open}${sel}${close}` : `${open}${close}`;
+      txt.setRangeText(insert, s, e, "end");
+      txt.focus();
+      if (close && !sel) {
+        const pos = s + open.length;
+        txt.setSelectionRange(pos, pos);
+      }
+      if (!page.querySelector("#st-emotional").checked) {
+        page.querySelector("#st-emotional").checked = true;
+        toast("Emotional rendering on", "Tags only work with it enabled.", "warn", 2500);
+      }
+    };
+  });
+
   page.querySelector("#st-go").onclick = async (e) => {
     const btn = e.currentTarget;
     const text = txt.value.trim();
@@ -276,6 +321,8 @@ export async function studio(page, seq, fresh) {
         speed: +speed.value,
         tau: +tau.value,
         accent: page.querySelector("#st-accent").value,
+        lang: page.querySelector("#st-lang").value,
+        emotional: page.querySelector("#st-emotional").checked,
       });
       clearInterval(tick);
       progWrap.innerHTML = "";
@@ -620,7 +667,7 @@ export async function library(page, seq, fresh) {
       <div class="v-head">
         <div class="v-ava">${esc((v.name || "?")[0].toUpperCase())}</div>
         <div class="grow">
-          <h4>${esc(v.name)}</h4>
+          <h4>${esc(v.name)} ${v.verified ? `<span class="pill ok" title="Ownership verified by voice-match">✓ verified</span>` : ""}</h4>
           <div class="v-sub">${esc(r.archetype || "unanalysed")} · ${fmtDur(v.duration)} · ${fmtWhen(v.created_at)}</div>
         </div>
       </div>
@@ -635,6 +682,7 @@ export async function library(page, seq, fresh) {
       <div class="row">
         <button class="btn sm accent" data-act="preview" title="Generate a greeting in this voice">✦ Preview</button>
         <button class="btn sm" data-act="sample" title="Listen to the reference sample">▶ Sample</button>
+        ${v.verified ? "" : `<button class="btn sm" data-act="verify" title="Prove ownership: read 5 random words, we compare voice metrics">✓ Verify</button>`}
         <span class="grow"></span>
         <button class="btn sm danger" data-act="del" title="Delete voice">🗑</button>
       </div>
@@ -664,6 +712,9 @@ export async function library(page, seq, fresh) {
       };
       wb.toggle();
     };
+    const verifyBtn = card.querySelector('[data-act="verify"]');
+    if (verifyBtn) verifyBtn.onclick = () => verifyModal(v);
+
     card.querySelector('[data-act="del"]').onclick = async () => {
       if (await confirmModal("Delete voice?", `“${v.name}” and its fingerprint will be removed from this machine. Generated audio stays in History.`, "Delete")) {
         try {
@@ -686,6 +737,89 @@ function addVoiceFlow() {
     if (input.files[0]) saveVoiceModal(input.files[0], null);
   };
   input.click();
+}
+
+/* ownership verification: read 5 random words → voice-metric match */
+async function verifyModal(v) {
+  const ch = await API.get(`/api/voices/${v.id}/challenge`);
+  const body = document.createElement("div");
+  body.innerHTML = `
+    <p class="small" style="margin-top:0">Read these words aloud, naturally, in the same
+    setting as your original sample. InsaneVoice compares <b>voice metrics</b> — pitch,
+    brightness, formants — not the words themselves.</p>
+    <div class="panel" style="text-align:center;font-family:var(--serif);font-size:21px;
+         letter-spacing:1px;background:var(--paper)">
+      ${ch.words.map((w) => esc(w)).join(" · ")}
+    </div>
+    <div class="rec-stage" style="padding:16px 0 4px">
+      <button class="rec-btn" id="vr-btn" style="width:70px;height:70px;font-size:24px">●</button>
+      <div class="rec-timer" id="vr-timer" style="font-size:22px">00:00</div>
+      <div class="small muted" id="vr-hint">Press to record, read the words, press again.</div>
+    </div>
+    <div id="vr-result"></div>`;
+  const foot = document.createElement("div");
+  foot.innerHTML = `
+    <button class="btn ghost" data-a="c">Later</button>
+    <button class="btn accent" data-a="check" disabled>✓ Submit check</button>`;
+  modal({
+    title: `Verify “${v.name}”`, body, footer: foot,
+    onMount: (veil, close) => {
+      let media = null, stream = null, chunks = [], t0 = 0, iv = null;
+      const btn = $("#vr-btn", veil), timer = $("#vr-timer", veil),
+            hint = $("#vr-hint", veil), check = $('[data-a="check"]', veil);
+      btn.onclick = async () => {
+        if (media && media.state === "recording") { media.stop(); return; }
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch {
+          hint.textContent = "Microphone blocked — allow access and retry.";
+          return;
+        }
+        chunks = [];
+        media = new MediaRecorder(stream);
+        media.ondataavailable = (e) => chunks.push(e.data);
+        media.onstop = () => {
+          stream.getTracks().forEach((t) => t.stop());
+          clearInterval(iv);
+          btn.classList.remove("recording");
+          btn.textContent = "●";
+          check.disabled = false;
+          hint.textContent = `Captured ${Math.round((Date.now() - t0) / 1000)}s — submit when ready.`;
+          veil._file = new File([new Blob(chunks)], "challenge.webm", { type: "audio/webm" });
+        };
+        media.start();
+        btn.classList.add("recording");
+        btn.textContent = "■";
+        t0 = Date.now();
+        iv = setInterval(() => {
+          const s = Math.floor((Date.now() - t0) / 1000);
+          timer.textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+        }, 250);
+      };
+      $('[data-a="c"]', veil).onclick = close;
+      check.onclick = async (e) => {
+        if (!veil._file) return;
+        busy(e.currentTarget, true);
+        try {
+          const fd = new FormData();
+          fd.append("file", veil._file);
+          const res = await API.postForm(`/api/voices/${v.id}/verify`, fd);
+          const r = res.verification;
+          $("#vr-result", veil).innerHTML = `
+            <div class="banner ${r.passed ? "ok" : "err"}" style="margin-top:12px">
+              ${r.passed ? "✓" : "✕"} <div><b>${r.passed ? "Verified!" : "Not matched."}</b><br>
+              ${esc(r.note)}<br>
+              <span class="small muted">${r.checks.map((c) =>
+                `${c.metric}: ${c.pass ? "pass" : "fail"}`).join(" · ")}</span></div>
+            </div>`;
+          if (r.passed) { check.disabled = true; check.textContent = "✓ Verified"; }
+          await refreshVoices();
+        } catch (err) {
+          toast("Verify failed", err.message, "err");
+        } finally { busy(e.currentTarget, false); }
+      };
+    },
+  });
 }
 
 /* ============================================================

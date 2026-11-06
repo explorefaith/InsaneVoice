@@ -2,6 +2,7 @@
 
 import { toast, sk, esc } from "./components.js";
 import * as pages from "./pages.js";
+import * as pages2 from "./pages2.js";
 
 /* ---------- api ---------- */
 
@@ -22,6 +23,11 @@ export const API = {
   get: (p) => api(p),
   post: (p, body) => api(p, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }),
+  patch: (p, body) => api(p, {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }),
@@ -78,15 +84,23 @@ function renderFoot() {
 /* ---------- router ---------- */
 
 const ROUTES = {
-  dashboard: { title: "Dashboard", render: pages.dashboard, group: "Overview" },
-  studio:    { title: "Studio",    render: pages.studio,    group: "Create" },
-  dna:       { title: "Voice DNA", render: pages.dna,       group: "Create" },
-  recorder:  { title: "Recorder",  render: pages.recorder,  group: "Create" },
-  library:   { title: "Voice Library", render: pages.library, group: "Voices" },
-  batch:     { title: "Batch Studio",  render: pages.batch,  group: "Voices" },
-  history:   { title: "History",   render: pages.history,   group: "Library" },
-  settings:  { title: "Settings",  render: pages.settings,  group: "Library" },
-  help:      { title: "Help",      render: pages.help,      group: "Library" },
+  dashboard:  { title: "Dashboard",        render: pages.dashboard,  group: "Overview" },
+  studio:     { title: "Studio",           render: pages.studio,     group: "Create" },
+  director:   { title: "Director's Studio",render: pages2.director,  group: "Create" },
+  dna:        { title: "Voice DNA",        render: pages.dna,        group: "Create" },
+  recorder:   { title: "Recorder",         render: pages.recorder,   group: "Create" },
+  library:    { title: "Voice Library",    render: pages.library,    group: "Voices" },
+  design:     { title: "Voice Design",     render: pages2.design,    group: "Voices" },
+  changer:    { title: "Voice Changer",    render: pages2.changer,   group: "Voices" },
+  batch:      { title: "Batch Studio",     render: pages.batch,      group: "Voices" },
+  isolate:    { title: "Voice Isolator",   render: pages2.isolate,   group: "Tools" },
+  transcribe: { title: "Transcribe",       render: pages2.transcribe,group: "Tools" },
+  dubbing:    { title: "Dubbing Studio",   render: pages2.dubbing,   group: "Tools" },
+  agent:      { title: "Agent Studio",     render: pages2.agent,     group: "Agent" },
+  connections:{ title: "Connections",      render: pages2.connections,group: "Agent" },
+  history:    { title: "History",          render: pages.history,    group: "System" },
+  settings:   { title: "Settings",         render: pages.settings,   group: "System" },
+  help:       { title: "Help",             render: pages.help,       group: "System" },
 };
 
 function buildNav() {
@@ -98,8 +112,11 @@ function buildNav() {
     g.items.push([id, r.title]);
   }
   const ICONS = {
-    dashboard: "⌂", studio: "✎", dna: "◉", recorder: "●", library: "☰",
-    batch: "≡", history: "↺", settings: "⚙", help: "?",
+    dashboard: "⌂", studio: "✎", director: "▦", dna: "◉", recorder: "●",
+    library: "☰", design: "✦", changer: "⇄", batch: "≡",
+    isolate: "◌", transcribe: "✐", dubbing: "▷",
+    agent: "★", connections: "⊕",
+    history: "↺", settings: "⚙", help: "?",
   };
   nav.innerHTML = groups.map((g) => `
     <div class="group">${esc(g.name)}</div>
