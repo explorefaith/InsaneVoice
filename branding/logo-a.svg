@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="ag" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F3D98B"/>      <stop offset="45%" stop-color="#D4AF37"/>      <stop offset="100%" stop-color="#8C6D1F"/>
+    </linearGradient>
+    <linearGradient id="agv" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#F3D98B"/>      <stop offset="45%" stop-color="#D4AF37"/>      <stop offset="100%" stop-color="#8C6D1F"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#121B2E"/>
+      <stop offset="100%" stop-color="#080C15"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="42%" r="60%">
+      <stop offset="0%" stop-color="#1C2A47" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#080C15" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- badge -->
+  <rect x="8" y="8" width="1008" height="1008" rx="204" fill="url(#ink)"/>
+  <rect x="8" y="8" width="1008" height="1008" rx="204" fill="url(#glow)"/>
+  <rect x="34" y="34" width="956" height="956" rx="182" fill="none" stroke="url(#ag)" stroke-width="4"/>
+  <rect x="58" y="58" width="908" height="908" rx="162" fill="none" stroke="url(#ag)" stroke-width="1.4" opacity="0.45"/>
+
+  <!-- sound ring -->
+  <circle cx="512" cy="425" r="150" fill="none" stroke="#D4AF37" stroke-width="1.2" opacity="0.35"/>
+      <line x1="684.0" y1="425.0" x2="734.1" y2="425.0" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.86"/>
+      <line x1="683.3" y1="440.0" x2="737.3" y2="444.7" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.90"/>
+      <line x1="681.4" y1="454.9" x2="736.0" y2="464.5" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.91"/>
+      <line x1="678.1" y1="469.5" x2="732.0" y2="483.9" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.92"/>
+      <line x1="673.6" y1="483.8" x2="725.7" y2="502.8" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.91"/>
+      <line x1="667.9" y1="497.7" x2="716.4" y2="520.3" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.89"/>
+      <line x1="661.0" y1="511.0" x2="702.8" y2="535.2" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.84"/>
+      <line x1="652.9" y1="523.7" x2="686.0" y2="546.9" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.76"/>
+      <line x1="643.8" y1="535.6" x2="668.8" y2="556.6" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.68"/>
+      <line x1="633.6" y1="546.6" x2="653.9" y2="566.9" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.64"/>
+      <line x1="622.6" y1="556.8" x2="641.8" y2="579.7" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.65"/>
+      <line x1="610.7" y1="565.9" x2="630.4" y2="594.2" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.70"/>
+      <line x1="598.0" y1="574.0" x2="617.0" y2="606.8" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.73"/>
+      <line x1="584.7" y1="580.9" x2="600.1" y2="614.0" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.72"/>
+      <line x1="570.8" y1="586.6" x2="581.1" y2="614.7" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.65"/>
+      <line x1="556.5" y1="591.1" x2="562.1" y2="611.8" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.57"/>
+      <line x1="541.9" y1="594.4" x2="544.6" y2="609.8" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.51"/>
+      <line x1="527.0" y1="596.3" x2="528.3" y2="611.5" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.50"/>
+      <line x1="512.0" y1="597.0" x2="512.0" y2="616.6" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.55"/>
+      <line x1="497.0" y1="596.3" x2="494.8" y2="622.2" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.61"/>
+      <line x1="482.1" y1="594.4" x2="476.6" y2="625.7" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.67"/>
+      <line x1="467.5" y1="591.1" x2="458.0" y2="626.6" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.72"/>
+      <line x1="453.2" y1="586.6" x2="438.8" y2="626.1" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.78"/>
+      <line x1="439.3" y1="580.9" x2="419.0" y2="624.4" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.84"/>
+      <line x1="426.0" y1="574.0" x2="399.2" y2="620.4" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.89"/>
+      <line x1="413.3" y1="565.9" x2="381.3" y2="611.7" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.92"/>
+      <line x1="401.4" y1="556.8" x2="367.1" y2="597.6" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.89"/>
+      <line x1="390.4" y1="546.6" x2="357.1" y2="579.9" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.83"/>
+      <line x1="380.2" y1="535.6" x2="348.8" y2="561.9" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.77"/>
+      <line x1="371.1" y1="523.7" x2="339.1" y2="546.1" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.75"/>
+      <line x1="363.0" y1="511.0" x2="326.4" y2="532.2" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.78"/>
+      <line x1="356.1" y1="497.7" x2="312.7" y2="517.9" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.84"/>
+      <line x1="350.4" y1="483.8" x2="302.2" y2="501.4" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.87"/>
+      <line x1="345.9" y1="469.5" x2="298.6" y2="482.2" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.85"/>
+      <line x1="342.6" y1="454.9" x2="302.0" y2="462.0" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.77"/>
+      <line x1="340.7" y1="440.0" x2="309.1" y2="442.8" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.67"/>
+      <line x1="340.0" y1="425.0" x2="316.1" y2="425.0" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.59"/>
+      <line x1="340.7" y1="410.0" x2="320.9" y2="408.3" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.55"/>
+      <line x1="342.6" y1="395.1" x2="324.4" y2="391.9" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.54"/>
+      <line x1="345.9" y1="380.5" x2="328.2" y2="375.8" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.53"/>
+      <line x1="350.4" y1="366.2" x2="333.0" y2="359.8" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.54"/>
+      <line x1="356.1" y1="352.3" x2="337.5" y2="343.6" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.56"/>
+      <line x1="363.0" y1="339.0" x2="340.8" y2="326.2" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.61"/>
+      <line x1="371.1" y1="326.3" x2="343.6" y2="307.1" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.69"/>
+      <line x1="380.2" y1="314.4" x2="348.6" y2="287.9" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.77"/>
+      <line x1="390.4" y1="303.4" x2="358.3" y2="271.3" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.81"/>
+      <line x1="401.4" y1="293.2" x2="373.1" y2="259.5" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.80"/>
+      <line x1="413.3" y1="284.1" x2="390.7" y2="251.7" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.75"/>
+      <line x1="426.0" y1="276.0" x2="408.0" y2="244.8" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.72"/>
+      <line x1="439.3" y1="269.1" x2="423.5" y2="235.2" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.73"/>
+      <line x1="453.2" y1="263.4" x2="438.1" y2="222.0" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.80"/>
+      <line x1="467.5" y1="258.9" x2="453.9" y2="208.1" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.88"/>
+      <line x1="482.1" y1="255.6" x2="472.0" y2="198.1" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.94"/>
+      <line x1="497.0" y1="253.7" x2="491.9" y2="195.1" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.95"/>
+      <line x1="512.0" y1="253.0" x2="512.0" y2="198.6" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.90"/>
+      <line x1="527.0" y1="253.7" x2="531.2" y2="205.7" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.84"/>
+      <line x1="541.9" y1="255.6" x2="549.2" y2="214.0" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.78"/>
+      <line x1="556.5" y1="258.9" x2="566.2" y2="222.9" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.73"/>
+      <line x1="570.8" y1="263.4" x2="581.8" y2="233.3" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.67"/>
+      <line x1="584.7" y1="269.1" x2="595.7" y2="245.6" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.61"/>
+      <line x1="598.0" y1="276.0" x2="608.2" y2="258.4" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.56"/>
+      <line x1="610.7" y1="284.1" x2="621.0" y2="269.3" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.53"/>
+      <line x1="622.6" y1="293.2" x2="635.8" y2="277.4" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.56"/>
+      <line x1="633.6" y1="303.4" x2="652.6" y2="284.4" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.62"/>
+      <line x1="643.8" y1="314.4" x2="669.0" y2="293.2" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.68"/>
+      <line x1="652.9" y1="326.3" x2="681.5" y2="306.3" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.70"/>
+      <line x1="661.0" y1="339.0" x2="688.4" y2="323.2" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.67"/>
+      <line x1="667.9" y1="352.3" x2="691.5" y2="341.3" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.61"/>
+      <line x1="673.6" y1="366.2" x2="695.0" y2="358.4" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.58"/>
+      <line x1="678.1" y1="380.5" x2="702.3" y2="374.0" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.60"/>
+      <line x1="681.4" y1="395.1" x2="713.6" y2="389.5" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.68"/>
+      <line x1="683.3" y1="410.0" x2="725.5" y2="406.3" stroke="url(#ag)" stroke-width="7" stroke-linecap="round" opacity="0.78"/>
+  <circle cx="512" cy="253" r="7" fill="#F3D98B"/>
+
+  <!-- monogram -->
+  <text x="512" y="507" font-family="Georgia, 'Times New Roman', serif" font-size="230"
+        font-weight="bold" text-anchor="middle" fill="url(#agv)" letter-spacing="6">IV</text>
+
+  <!-- wordmark -->
+  <line x1="182" y1="826" x2="352" y2="826" stroke="#D4AF37" stroke-width="1.2" opacity="0.7"/>
+  <rect x="494" y="820" width="12" height="12" transform="rotate(45 500 826)" fill="#D4AF37"/>
+  <line x1="636" y1="826" x2="806" y2="826" stroke="#D4AF37" stroke-width="1.2" opacity="0.7"/>
+  <text x="512" y="852" font-family="Georgia, 'Times New Roman', serif" font-size="58"
+        text-anchor="middle" fill="#F5EFE0" letter-spacing="13">INSANEVOICE</text>
+  <text x="512" y="912" font-family="Georgia, 'Times New Roman', serif" font-size="24"
+        text-anchor="middle" fill="#D4AF37" letter-spacing="9" opacity="0.95">VOICE CLONING STUDIO</text>
+</svg>

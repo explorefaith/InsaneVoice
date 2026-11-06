@@ -1,0 +1,30 @@
+# InsaneVoice — Python dependencies (CPU inference)
+# torch is installed separately with the CPU wheel index:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+numpy
+scipy
+soundfile
+librosa
+huggingface_hub
+transformers
+unidecode
+langid
+cn2an
+pypinyin
+jieba
+g2p_en
+inflect
+nltk
+num2words
+pykakasi
+mecab-python3
+unidic-lite
+cached_path
+eng_to_ipa
+pydub
+wavmark
+psutil

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect width="1024" height="1024" rx="72" fill="#F4EFE6"/>
+  <rect x="66" y="66" width="892" height="892" rx="26" fill="none" stroke="#1A1712" stroke-width="3" opacity="1.0"/>
+  <rect x="88" y="88" width="848" height="848" rx="16" fill="none" stroke="#1A1712" stroke-width="1.4" opacity="0.55"/>
+
+    <rect x="179" y="317" width="22" height="70" rx="5" fill="#1A1712"/>
+    <rect x="225" y="288" width="22" height="128" rx="5" fill="#1A1712"/>
+    <rect x="271" y="302" width="22" height="100" rx="5" fill="#1A1712"/>
+    <rect x="317" y="257" width="22" height="190" rx="5" fill="#1A1712"/>
+    <rect x="363" y="278" width="22" height="148" rx="5" fill="#1A1712"/>
+    <rect x="409" y="226" width="22" height="252" rx="5" fill="#1A1712"/>
+    <rect x="455" y="184" width="22" height="336" rx="5" fill="#1A1712"/>
+    <rect x="501" y="202" width="22" height="300" rx="5" fill="#1A1712"/>
+    <rect x="547" y="126" width="22" height="452" rx="5" fill="#C9432B"/>
+    <rect x="593" y="162" width="22" height="380" rx="5" fill="#1A1712"/>
+    <rect x="639" y="221" width="22" height="262" rx="5" fill="#1A1712"/>
+    <rect x="685" y="247" width="22" height="210" rx="5" fill="#1A1712"/>
+    <rect x="731" y="272" width="22" height="160" rx="5" fill="#1A1712"/>
+    <rect x="777" y="291" width="22" height="122" rx="5" fill="#1A1712"/>
+    <rect x="823" y="311" width="22" height="82" rx="5" fill="#1A1712"/>
+
+  <text x="512" y="700" font-family="Georgia, 'Times New Roman', serif" font-size="118"
+        text-anchor="middle" fill="#1A1712">InsaneVoice<tspan fill="#C9432B">.</tspan></text>
+  <text x="512" y="784" font-family="Georgia, 'Times New Roman', serif" font-size="27"
+        text-anchor="middle" fill="#1A1712" opacity="0.72"
+        letter-spacing="11">VOICE CLONING STUDIO</text>
+<!-- C1 Print Label - vermillion -->
+</svg>

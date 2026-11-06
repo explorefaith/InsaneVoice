@@ -1,0 +1,27 @@
+# data & models
+.ivdata/
+*.pth
+*.wav
+!branding/**/*.wav
+
+# python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# uploads & generated audio (user data)
+backend/data/
+data/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# e2e scratch
+scripts/_e2e_out/
+third_party/
