@@ -6,7 +6,7 @@
 
 **A free, local, ElevenLabs-class voice studio for faceless creators.**
 
-Clone your voice from 10 seconds of audio, speak 6 languages, inject emotions
+Clone your voice from 10 seconds of audio, speak 30+ languages (Bangla included), inject emotions
 and non-verbals, swap performances between voices, isolate, transcribe, dub,
 direct long-form projects — and let an agent turn one prompt into a finished video.
 
@@ -88,7 +88,9 @@ language) download on first use of Transcribe/Dubbing.
 filtered noise. `[laughter]` deliberately has no synthetic equivalent — record
 a real chuckle and run it through the **Voice Changer**. That is what it is for.
 
-**Language support:** base speech in EN (US/BR), ES, FR, ZH, JA, KO — extra
+**Language support:** base speech via MeloTTS (EN US/BR, ES, FR, ZH, JA, KO) and
+Meta MMS-TTS (Bangla, Hindi, Arabic, German, Portuguese, Russian, Italian, Turkish,
+Vietnamese, Indonesian, Dutch, Polish, …) — extra
 languages load on first use with an LRU pool (8 GB laptops can't hold them all).
 The Voice Changer is language-agnostic: performance in, tone out.
 

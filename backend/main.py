@@ -172,7 +172,8 @@ async def analyze_sample(file: UploadFile = File(...)):
 
 @app.post("/api/voices")
 async def create_voice(file: UploadFile = File(...), name: str = Form(...),
-                       consent: str = Form("false"), notes: str = Form("")):
+                       consent: str = Form("false"), notes: str = Form(""),
+                       language: str = Form("")):
     if consent.lower() != "true":
         return _err("Consent is required.", 403)
     if not config.models_present():
@@ -192,6 +193,7 @@ async def create_voice(file: UploadFile = File(...), name: str = Form(...),
         "sample": wav.name, "sample_url": f"/api/audio/samples/{wav.name}",
         "se_path": str(se_path), "duration": round(duration, 2),
         "consent": True, "notes": notes[:300], "dna": report, "verified": False,
+        "language": (language or "other").lower(),
     }
     storage.add_voice(profile)
     return _ok({"voice": profile}, 201)
