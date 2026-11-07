@@ -29,51 +29,55 @@ def pick_voice(pred):
 
 
 SCENES = [
-    dict(type="title", text="Still paying to sound like yourself?",
+    dict(type="title", text="Paying to sound like yourself?",
          sub="InsaneVoice — a free, local voice studio",
-         narration="Every month, creators pay subscriptions just to sound like themselves."),
+         narration="Still paying every month, just to sound like yourself?"),
     dict(type="points", text="The problem",
-         points=["Rented voices, monthly bills", "Monotone robots, no emotion",
+         points=["Rented voices, monthly bills", "Flat, robotic delivery",
                  "Your audio lives on someone else's cloud"],
-         narration="Robotic voices. Rental voices. And your audio lives on someone else's cloud."),
+         narration="Robotic voices, rental voices, and your audio living on someone else's cloud."),
     dict(type="ui_record",
-         path=[(900, 620), (735, 300), (735, 300)], clicks=[0.25, 0.8],
-         sfx=[{"t": 0.25, "k": "click"}, {"t": 0.3, "k": "whoosh"},
+         path=[(900, 620), (735, 300), (735, 300)], clicks=[0.22, 0.8],
+         sfx=[{"t": 0.22, "k": "click"}, {"t": 0.27, "k": "whoosh"},
+              {"t": 0.55, "k": "type"}, {"t": 0.62, "k": "type"},
               {"t": 0.8, "k": "click"}],
-         narration="InsaneVoice runs entirely on your own laptop. Record yourself for ten seconds."),
+         narration="InsaneVoice runs on your own laptop. Record yourself for just ten seconds."),
     dict(type="ui_clone",
          path=[(900, 620), (700, 380)], clicks=[0.15],
          sfx=[{"t": 0.15, "k": "click"}, {"t": 0.55, "k": "chime"}],
-         narration="Voice DNA reads your fingerprint, and the cloner paints every word with your tone."),
+         narration="Voice DNA reads your fingerprint. The cloner paints every word with your tone."),
     dict(type="ui_generate",
-         path=[(900, 620), (400, 200), (396, 333)], clicks=[0.38],
-         sfx=[{"t": 0.1, "k": "type"}, {"t": 0.18, "k": "type"}, {"t": 0.26, "k": "type"},
-              {"t": 0.38, "k": "click"}, {"t": 0.85, "k": "success"}],
-         narration="Type anything. Add sighs, gasps, whispers, happiness, then press generate."),
-    dict(type="ui_language", sel_idx=6, sel_t=0.62,
-         path=[(900, 620), (450, 320), (450, 398)], clicks=[0.2, 0.62],
-         sfx=[{"t": 0.2, "k": "click"}, {"t": 0.45, "k": "whoosh"},
-              {"t": 0.62, "k": "click"}, {"t": 0.7, "k": "pop"}],
-         narration="সত্যিই! বাংলা, হিন্দি, আরবি — সব কিছু অফলাইনে কাজ করে।",
-         narration_en="And yes — Bangla, Hindi, Arabic, and more. All fully offline."),
+         path=[(900, 620), (400, 200), (396, 333)], clicks=[0.42],
+         sfx=[{"t": 0.06 + i * 0.045, "k": "type"} for i in range(14)]
+             + [{"t": 0.42, "k": "click"}, {"t": 0.88, "k": "success"}],
+         narration="Type anything. Add sighs, gasps, whispers, then press generate.",
+         typed_text="Add [sigh] sighs, [gasp] gasps, [happy] joy, [whisper] secrets!"),
+    dict(type="ui_language", sel_idx=6, sel_t=0.6,
+         path=[(900, 620), (450, 320), (450, 398)], clicks=[0.18, 0.6],
+         sfx=[{"t": 0.18, "k": "click"}, {"t": 0.4, "k": "whoosh"},
+              {"t": 0.6, "k": "click"}, {"t": 0.68, "k": "pop"}],
+         narration="আর ভাষা? বাংলা, হিন্দি, আরবি — সবকিছু সম্পূর্ণ অফলাইনে!"),
     dict(type="ui_voices",
          path=[(900, 620), (450, 300)], clicks=[],
-         sfx=[{"t": 0.2, "k": "whoosh"}, {"t": 0.8, "k": "chime"}],
-         narration="Seventy plus ready voices across eighteen languages, every one shaped from real D S P."),
+         sfx=[{"t": 0.18, "k": "whoosh"}, {"t": 0.75, "k": "chime"}],
+         narration="Seventy plus ready voices, across sixteen languages, every one free."),
     dict(type="ui_connections",
-         path=[(900, 620), (500, 280), (500, 280)], clicks=[0.32],
-         sfx=[{"t": 0.32, "k": "click"}, {"t": 0.55, "k": "type"},
-              {"t": 0.66, "k": "success"}],
-         narration="Bring your own model. Paste an endpoint, drop an A P I key, add fallbacks."),
+         path=[(900, 620), (500, 282), (500, 282)], clicks=[0.3],
+         sfx=[{"t": 0.3, "k": "click"}]
+             + [{"t": 0.44 + i * 0.04, "k": "type"} for i in range(6)]
+             + [{"t": 0.68, "k": "success"}],
+         narration="Bring your own model. Paste a key. Add fallbacks. Keys never leave this machine."),
     dict(type="ui_agent",
-         path=[(900, 620), (390, 230)], clicks=[0.3],
-         sfx=[{"t": 0.3, "k": "click"}, {"t": 0.9, "k": "chime"}],
-         narration="Then the Agent Studio writes, voices and renders a full video from one prompt."),
+         path=[(900, 620), (390, 230)], clicks=[0.28],
+         sfx=[{"t": 0.28, "k": "click"}]
+             + [{"t": 0.44 + i * 0.09, "k": "pop"} for i in range(4)]
+             + [{"t": 0.92, "k": "chime"}],
+         narration="The Agent Studio writes, voices, and renders a full video from one prompt."),
     dict(type="points", text="Proof, not promises",
          points=["No cloud. No API keys. No bills.",
-                 "Consent gate + inaudible watermark on every clip",
+                 "Consent gate + inaudible watermark",
                  "Open source under MIT"],
-         narration="Free, private, and open source. Consent gated, watermarked, and fully yours."),
+         narration="No cloud, no keys, no bills. Consent gated and watermarked."),
     dict(type="end", text="InsaneVoice",
          narration="InsaneVoice. Your voice. Yours."),
 ]
@@ -89,8 +93,7 @@ def main():
     print("[commercial2] warming engine...", flush=True)
     engine.ensure_loaded(block=True)
 
-    host = pick_voice(lambda v: "Warm Baritone" in v.get("name", ""))
-    host = host or pick_voice(lambda v: v.get("language") == "en" and v.get("preset"))
+    host = pick_voice(lambda v: v.get("id") == "ref_848b496170")         or pick_voice(lambda v: "Demo British" in v.get("name", ""))         or pick_voice(lambda v: v.get("language") == "en" and v.get("preset"))
     bangla = pick_voice(lambda v: v.get("language") == "bn")
     print(f"[commercial2] host={host['name'] if host else None} "
           f"bangla={bangla['name'] if bangla else None}", flush=True)
@@ -107,10 +110,10 @@ def main():
         print(f"[commercial2] scene {i + 1}/{len(SCENES)} [{sc['type']}] voicing "
               f"({lang})...", flush=True)
         engine.generate(text, voice["se_path"], wav,
-                        speed=1.02, tau=0.3, lang=lang)
+                        speed=1.12, tau=0.3, lang=lang)
         dur = sf.info(str(wav)).duration
-        scene = {k: v for k, v in sc.items() if k != "narration"}
-        scene["duration"] = round(dur + 0.55, 2)
+        scene = dict(sc)
+        scene["duration"] = round(dur + 0.4, 2)
         audios.append(wav)
         clip = WORK / f"s{i}.mp4"
         print(f"[commercial2] scene {i + 1}: rendering {scene['duration']}s...", flush=True)

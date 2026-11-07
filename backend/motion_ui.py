@@ -40,14 +40,14 @@ def sfx(kind: str) -> np.ndarray:
     if kind == "click":
         n = int(0.05 * SR)
         t = np.arange(n) / SR
-        y = (np.sin(2 * np.pi * 1100 * t) * np.exp(-t * 90)
-             + rng.standard_normal(n) * 0.25 * np.exp(-t * 220))
-        return y * 0.5 * _env(n, 0.002, 0.01)
+        y = (np.sin(2 * np.pi * 2100 * t) * np.exp(-t * 110)
+             + rng.standard_normal(n) * 0.4 * np.exp(-t * 300))
+        return y * 1.35 * _env(n, 0.001, 0.008)
     if kind == "type":
         n = int(0.03 * SR)
         t = np.arange(n) / SR
         y = np.sin(2 * np.pi * 1800 * t) * np.exp(-t * 260)
-        return y * 0.22
+        return y * 0.75
     if kind == "whoosh":
         n = int(0.45 * SR)
         t = np.arange(n) / SR
@@ -58,13 +58,13 @@ def sfx(kind: str) -> np.ndarray:
         for i in range(n):
             acc = (1 - alpha[i]) * noise[i] + alpha[i] * acc
             y[i] = acc
-        return (y * np.sin(np.pi * t / 0.45) ** 1.4) * 0.5
+        return (y * np.sin(np.pi * t / 0.45) ** 1.4) * 0.95
     if kind == "pop":
         n = int(0.12 * SR)
         t = np.arange(n) / SR
         f = np.linspace(420, 170, n)
         y = np.sin(2 * np.pi * f * t) * np.exp(-t * 26)
-        return y * 0.5
+        return y * 0.95
     if kind == "chime":
         n = int(0.9 * SR)
         t = np.arange(n) / SR
@@ -72,7 +72,7 @@ def sfx(kind: str) -> np.ndarray:
         for i, f in enumerate([880, 1108.7, 1318.5]):
             start = int(i * 0.09 * SR)
             tt = t[: n - start]
-            y[start:] += np.sin(2 * np.pi * f * tt) * np.exp(-tt * 4.2) * 0.28
+            y[start:] += np.sin(2 * np.pi * f * tt) * np.exp(-tt * 4.2) * 0.5
         return y
     if kind == "success":
         n = int(0.7 * SR)
@@ -81,7 +81,7 @@ def sfx(kind: str) -> np.ndarray:
         for i, f in enumerate([659.3, 987.8]):
             start = int(i * 0.1 * SR)
             tt = t[: n - start]
-            y[start:] += np.sin(2 * np.pi * f * tt) * np.exp(-tt * 5) * 0.3
+            y[start:] += np.sin(2 * np.pi * f * tt) * np.exp(-tt * 5) * 0.55
         return y
     raise ValueError(kind)
 
@@ -96,8 +96,8 @@ def build_sfx_track(events: list[dict], duration: float, out: Path) -> Path:
         if i1 > i0:
             track[i0:i1] += s[: i1 - i0].astype(np.float32)
     peak = np.max(np.abs(track)) or 1.0
-    if peak > 0.9:
-        track *= 0.9 / peak
+    if peak > 0.001:
+        track *= min(1.0, 0.95 / peak)
     import soundfile as sf
     sf.write(str(out), track, SR)
     return out
@@ -125,7 +125,23 @@ def _field(d, box, text="", focus=False, typed_frac=1.0, placeholder=""):
         outline=(INK if focus else LINE), width=2 if focus else 1)
     shown = text[: max(0, int(len(text) * typed_frac))]
     if shown:
-        d.text((x0 + 12, y0 + (y1 - y0) / 2 - 10), shown, font=SANS(15), fill=INK)
+        f = SANS(15)
+        max_w = (x1 - x0) - 24
+        lines, cur = [], ""
+        for w in shown.split(" "):
+            t = (cur + " " + w).strip()
+            if d.textlength(t, font=f) <= max_w or not cur:
+                cur = t
+            else:
+                lines.append(cur); cur = w
+        if cur:
+            lines.append(cur)
+        lines = lines[-4:]                      # keep last 4 lines inside box
+        lh = 20
+        ty = y0 + (y1 - y0) / 2 - (len(lines) * lh) / 2
+        for ln in lines:
+            d.text((x0 + 12, ty), ln, font=f, fill=INK)
+            ty += lh
     elif placeholder:
         d.text((x0 + 12, y0 + (y1 - y0) / 2 - 10), placeholder, font=SANS(15), fill=(167, 157, 138))
 
@@ -197,9 +213,10 @@ def _app_frame(t_norm):
     for i, hh in enumerate([10, 20, 14, 30, 22, 34, 24, 16]):
         x = 62 + i * 8
         d.rounded_rectangle([x, 56 - hh / 2, x + 5, 56 + hh / 2], radius=2.5, fill=INK)
-    _wd = d.textlength("Insane", font=SERIF_I(19))
-    d.text((138, 44), "Insane", font=SERIF_I(19), fill=INK)
-    d.text((138 + _wd + 1, 44), "Voice", font=SERIF_I(19), fill=VERM)
+    _wf = SERIF_I(16)
+    _wd = d.textlength("Insane", font=_wf)
+    d.text((134, 46), "Insane", font=_wf, fill=INK)
+    d.text((134 + _wd + 1, 46), "Voice", font=_wf, fill=VERM)
     # menu groups
     menus = [("Dashboard", True)] if False else []
     items = ["Dashboard", "Studio", "Director's Studio", "Voice DNA",
@@ -246,19 +263,24 @@ def ui_record(img, d, s, t, cursor_xy, clicks):
         d.rectangle([bx - 10, by - 10, bx + 10, by + 10], fill=VERM)
     else:
         d.ellipse([bx - 14, by - 14, bx + 14, by + 14], fill=PAPER)
-    # waveform drawing while recording
+    # waveform: animated + progressive while recording
     _rr(d, [292, 380, W - 92, 500], 8, fill=PAPER2, outline=LINE)
     if s.get("_rec_on", False):
-        rng = np.random.default_rng(3)
         n = int((W - 92 - 292 - 24) / 7)
-        for i in range(n):
-            p = rng.uniform(0.15, 0.95) * min(1, i / (n * 0.7) * 3 if i < n * 0.3 else 1)
-            h = max(3, p * 90 * (0.6 + 0.4 * math.sin(i * 0.9)))
+        reveal = min(1.0, t / 0.8)
+        for i in range(int(n * reveal)):
             x = 304 + i * 7
+            ph = i * 0.55 + t * 21.0
+            p = 0.22 + 0.30 * abs(math.sin(ph)) + 0.22 * abs(math.sin(ph * 0.37 + 1.3))
+            h = max(3, p * 84)
             d.rounded_rectangle([x, 440 - h / 2, x + 4, 440 + h / 2], radius=2, fill=INK)
+        # blinking REC indicator
+        if math.sin(t * 44) > -0.2:
+            d.ellipse([W - 160, 396, W - 146, 410], fill=VERM)
+            d.text((W - 138, 394), "REC", font=SANS(15, bold=True), fill=VERM)
     # timer
     if s.get("_rec_on"):
-        d.text((bx - 30, 340), f"00:{int(t * 30):02d}", font=SERIF(30), fill=INK)
+        d.text((bx - 34, 340), f"00:{int(t * 30):02d}", font=SERIF(30), fill=INK)
     _cursor(d, cursor_xy[0], cursor_xy[1], clicks)
 
 
@@ -322,8 +344,9 @@ def ui_generate(img, d, s, t, cursor_xy, clicks):
     _rr(d, [262, 52, W - 66, H - 52], 12, fill=(251, 248, 241), outline=LINE)
     d.text((292, 78), "Studio", font=SERIF_I(30), fill=INK)
     _field(d, [292, 130, 820, 250],
-           "Welcome back to the channel. [sigh] Today was long. But [happy]this news is amazing[/happy]!",
-           typed_frac=min(1, t * 2.2))
+           s.get("typed_text",
+                 "Add [sigh] sighs, [gasp] gasps, [happy] joy, [whisper] secrets!"),
+           typed_frac=min(1, t * 1.8))
     # emotion chips
     x = 292
     for chip in ["[pause]", "[sigh]", "[gasp]", "happy span", "whisper"]:
@@ -484,9 +507,10 @@ def ui_voices(img, d, s, t, cursor_xy, clicks):
         y0 = 156 + row * 118 + (1 - a) * 16
         _rr(d, [x0, y0, x0 + 306, y0 + 104], 10, fill=PAPER, outline=LINE)
         d.rectangle([x0 + 14, y0 + 14, x0 + 50, y0 + 50], fill=INK)
-        d.text((x0 + 32, y0 + 32), initial, font=SERIF_I(20), fill=PAPER, anchor="mm")
+        d.text((x0 + 32, y0 + 32), initial, font=_lang_font(20, bold=True, text=initial),
+               fill=PAPER, anchor="mm")
         d.text((x0 + 62, y0 + 16), name, font=SERIF_I(17), fill=INK)
-        d.text((x0 + 62, y0 + 42), lang, font=SANS(12), fill=INK3)
+        d.text((x0 + 62, y0 + 42), lang, font=_lang_font(12, text=lang), fill=INK3)
         bw = int(180 * a)
         d.rounded_rectangle([x0 + 62, y0 + 66, x0 + 242, y0 + 72], 3, fill=PAPER3)
         d.rounded_rectangle([x0 + 62, y0 + 66, x0 + 62 + bw, y0 + 72], 3,
@@ -506,6 +530,47 @@ UI_PAINTERS = {
 
 
 # ---------------- renderer ----------------
+
+def _caption(d, narration, t_sec, dur, y=H - 64):
+    """Bottom caption strip: words reveal in sync with the narration."""
+    if not narration:
+        return
+    words = narration.split()
+    total = sum(len(w) + 1 for w in words)
+    acc, spans = 0, []
+    for w in words:
+        start = dur * (acc / total)
+        acc += len(w) + 1
+        spans.append((start, w))
+    f = SANS(19)
+    max_w = W - 220
+    lines, cur, cur_words = [], [], []
+    for st, w in spans:
+        t = " ".join(cur_words + [w])
+        if d.textlength(t, font=f) <= max_w or not cur_words:
+            cur_words.append(w); cur = t
+        else:
+            lines.append(cur_words); cur_words = [w]
+    if cur_words:
+        lines.append(cur_words)
+    lh = 27
+    bh = 30 + len(lines) * lh
+    _rr(d, [70, y - 8, W - 70, y - 8 + bh - 12], 10, fill=(251, 248, 241))
+    d.line([70, y - 8, W - 70, y - 8], fill=LINE, width=1)
+    ty = y + 2
+    for line in lines:
+        starts = [st for st, w in spans if w in line]
+        # rebuild with real spans per line
+        line_w = sum(d.textlength(w + " ", font=f) for w in line)
+        tx = (W - line_w) / 2
+        for st, w in zip([s2 for s2, w2 in spans if w2 in line], line):
+            wcol = INK if t_sec >= st else (167, 157, 138)
+            if abs(t_sec - st) < 0.35:
+                wcol = VERM
+            d.text((tx, ty), w, font=f, fill=wcol)
+            tx += d.textlength(w + " ", font=f)
+        ty += lh
+
 
 def render_ui_scene(scene: dict, audio_path: Path, out_path: Path,
                     workdir: Path, fps: int = 30, progress=None) -> Path:
@@ -531,6 +596,7 @@ def render_ui_scene(scene: dict, audio_path: Path, out_path: Path,
             if 0 <= lt <= 0.12:
                 click_local = lt / 0.12
         painter(img, d, s, tn, cur, click_local)
+        _caption(d, scene.get("narration", ""), tn * dur, dur)
         img.save(fdir / f"f{f:05d}.png")
         if progress and f % 20 == 0:
             progress(f / frames_n)

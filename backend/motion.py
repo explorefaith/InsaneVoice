@@ -326,9 +326,13 @@ def render_scene(scene: dict, audio_path: Path | None, out_path: Path,
     peaks = audio_peaks(audio_path, frames_n) if audio_path else []
     painter = PAINTERS.get(scene.get("type") or "title", paint_title)
 
+    narr = scene.get("narration", "")
+    from motion_ui import _caption
     for f in range(frames_n):
         img = _bg(f / frames_n)
         painter(img, scene, f / max(frames_n - 1, 1), peaks)
+        if narr:
+            _caption(ImageDraw.Draw(img), narr, f / max(frames_n - 1, 1) * dur, dur)
         img.save(fdir / f"f{f:05d}.png")
         if progress and f % 15 == 0:
             progress(f / frames_n)
