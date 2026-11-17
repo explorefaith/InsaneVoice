@@ -2,10 +2,13 @@
    Dubbing, Director's Studio, Agent Studio, Connections */
 
 import { API, state, refreshVoices, nav, render } from "./app.js";
+import { abs } from "./net.js";
 import {
   toast, modal, confirmModal, sk, busy, WaveBox,
   esc, fmtDur, fmtWhen, download, pageHead, iconBtn, langLabel, groupedVoiceOptions,
 } from "./components.js";
+import { icon } from "./icons.js";
+import { inlinePlay } from "./components.js";
 
 const $ = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
@@ -38,8 +41,8 @@ function audioCard(gen) {
   d.innerHTML = `
     <div class="spread">
       <div class="row">
-        <button class="btn sm accent" data-play>▶ Play</button>
-        ${gen.audio_url ? `<button class="btn sm" data-dl>⬇ Download</button>` : ""}
+        <button class="btn sm accent" data-play>${icon("play", 15)} Play</button>
+        ${gen.audio_url ? `<button class="btn sm" data-dl>${icon("download", 15)} Download</button>` : ""}
       </div>
       <div class="audio-meta">
         <span class="pill acc">${esc(gen.voice_name || "voice")}</span>
@@ -53,7 +56,7 @@ function audioCard(gen) {
     wb.load();
     $("[data-play]", d).onclick = (e) => {
       wb.toggle();
-      e.target.textContent = wb.audio.paused ? "▶ Play" : "■ Stop";
+      e.target.innerHTML = wb.audio.paused ? `${icon("play", 15)} Play` : `${icon("stop", 15)} Stop`;
     };
     $("[data-dl]", d).onclick = () => download(gen.audio_url, "insanevoice.wav");
   }
@@ -71,7 +74,7 @@ function emptyState(icon, title, text, btnLabel, btnId) {
 function noVoices(page, title, kicker) {
   page.innerHTML = shell(`
     ${head(title, "", kicker)}
-    ${emptyState("🎙", "You need a voice first",
+    ${emptyState(icon("mic", 34), "You need a voice first",
       "Record or import a 10–30 second sample to create your first cloneable voice.",
       "Create a voice now", "nv-go")}`);
   $("#nv-go", page).onclick = () => nav("recorder");
@@ -89,7 +92,7 @@ export async function changer(page) {
     <div class="grid c2" style="gap:20px" id="vc-grid">
       <div class="panel">
         <div class="dropzone" id="vc-dz">
-          <div class="dz-ico">🎙</div>
+          <div class="dz-ico">${icon("mic", 26)}</div>
           <h4>Drop the guide recording here</h4>
           <p>any language — the converter only transfers tone</p>
           <input type="file" id="vc-file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.webm" hidden>
@@ -98,15 +101,15 @@ export async function changer(page) {
           <select id="vc-voice">${groupedVoiceOptions(voices)}</select></label>
         <label class="field"><span>Clone strength</span>
           <div class="range-row">
-            <input type="range" id="vc-tau" min="0.1" max="0.9" step="0.05" value="0.3">
-            <output id="vc-tau-o">0.30</output>
+            <input type="range" id="vc-tau" min="0.1" max="0.9" step="0.05" value="0.7">
+            <output id="vc-tau-o">0.70</output>
           </div></label>
-        <button class="btn accent" id="vc-go">✦ Convert performance</button>
+        <button class="btn accent" id="vc-go">${icon("spark", 16)} &nbsp;Convert performance</button>
         <div id="vc-prog" style="margin-top:14px"></div>
       </div>
       <div class="panel">
         <h3 style="margin:0 0 12px">Result</h3>
-        <div id="vc-out">${emptyState("🎧", "Nothing converted yet",
+        <div id="vc-out">${emptyState(icon("waveform", 34), "Nothing converted yet",
           "The output keeps every rhythm and emphasis of the original — in the new voice.")}</div>
       </div>
     </div>`);
@@ -126,7 +129,7 @@ export async function changer(page) {
       const fd = new FormData();
       fd.append("file", fi.files[0]);
       fd.append("voice_id", $("#vc-voice", page).value);
-      fd.append("tau", $("#vc-tau", page).value);
+      fd.append("tau", (1 - +$("#vc-tau", page).value).toFixed(2));
       const res = await API.postForm("/api/changer", fd);
       $("#vc-prog", page).innerHTML = "";
       $("#vc-out", page).innerHTML = "";
@@ -153,7 +156,7 @@ export async function isolate(page) {
           <p>wav, mp3, m4a, ogg, webm — up to 30MB</p>
           <input type="file" id="iso-file" accept="audio/*" hidden>
         </div>
-        <button class="btn accent" style="margin-top:16px" id="iso-go">✦ Isolate voice</button>
+        <button class="btn accent" style="margin-top:16px" id="iso-go">${icon("spark", 16)} &nbsp;Isolate voice</button>
         <div id="iso-prog" style="margin-top:14px"></div>
       </div>
       <div class="panel">
@@ -183,7 +186,7 @@ export async function isolate(page) {
       const w1 = new WaveBox($("#iso-a", page), iso.original_url, { height: 56 }); w1.load();
       const w2 = new WaveBox($("#iso-b", page), iso.url, { height: 56 }); w2.load();
       const dl = document.createElement("button");
-      dl.className = "btn accent"; dl.textContent = "⬇ Download clean audio";
+      dl.className = "btn accent"; dl.innerHTML = `${icon("download", 15)} Download clean audio`;
       dl.onclick = () => download(iso.url, "isolated.wav");
       $("#iso-b", page).parentElement.appendChild(dl);
       toast("Isolated", "Noise floor removed.");
@@ -220,7 +223,7 @@ export async function design(page) {
               <output id="vd-bright-o">50</output></div></label>
           </div>
         </details>
-        <button class="btn accent" id="vd-go">✦ Sculpt this voice</button>
+        <button class="btn accent" id="vd-go">${icon("spark", 16)} &nbsp;Sculpt this voice</button>
         <div id="vd-prog" style="margin-top:14px"></div>
       </div>
       <div class="panel">
@@ -257,7 +260,7 @@ export async function design(page) {
             <span class="pill acc">${esc(r.archetype)}</span>
           </div>
           <div class="row">
-            <button class="btn accent" id="vd-save">＋ Save as a voice</button>
+            <button class="btn accent" id="vd-save">${icon("plus", 15)} &nbsp;Save as a voice</button>
           </div>
         </div>`;
       const wb = new WaveBox($("[data-wave]", page), res.audio_url);
@@ -272,7 +275,7 @@ export async function design(page) {
           <div id="vde"></div>`;
         const foot = document.createElement("div");
         foot.innerHTML = `<button class="btn ghost" data-a="c">Cancel</button>
-          <button class="btn accent" data-a="s">＋ Create</button>`;
+          <button class="btn accent" data-a="s">${icon("plus", 14)} &nbsp;Create</button>`;
         modal({
           title: "Save designed voice", body: bodyEl, footer: foot,
           onMount: (veil, close) => {
@@ -329,7 +332,7 @@ export async function transcribe(page) {
         </div>
         <label class="field" style="margin-top:16px"><span>Language</span>
           <select id="tr-lang">${STT_LANGS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join("")}</select></label>
-        <button class="btn accent" id="tr-go">✦ Transcribe</button>
+        <button class="btn accent" id="tr-go">${icon("spark", 16)} &nbsp;Transcribe</button>
         <div id="tr-prog" style="margin-top:14px"></div>
       </div>
       <div class="panel" id="tr-out-panel">
@@ -359,8 +362,8 @@ export async function transcribe(page) {
         <div class="stack">
           <div class="row">
             <button class="btn sm" id="tr-copy">⧉ Copy text</button>
-            <button class="btn sm" id="tr-srt">⬇ SRT</button>
-            <button class="btn sm" id="tr-txt">⬇ TXT</button>
+            <button class="btn sm" id="tr-srt">${icon("download", 14)} SRT</button>
+            <button class="btn sm" id="tr-txt">${icon("download", 14)} TXT</button>
             <span class="pill">${fmtDur(t.duration)}</span>
           </div>
           <div class="panel" style="max-height:300px;overflow:auto;background:var(--paper)">
@@ -401,7 +404,7 @@ export async function dubbing(page) {
         <div class="row wrap" style="margin-top:14px">
           <label class="field grow" style="margin:0"><span>Spoken language</span>
             <select id="db-lang">${STT_LANGS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join("")}</select></label>
-          <button class="btn accent" id="db-go" style="align-self:flex-end">✦ Transcribe & segment</button>
+          <button class="btn accent" id="db-go" style="align-self:flex-end">${icon("spark", 16)} &nbsp;Transcribe & segment</button>
         </div>
         <div id="db-prog" style="margin-top:14px"></div>
       </div>
@@ -454,7 +457,7 @@ export async function dubbing(page) {
             </div>`).join("")}
         </div>
         <div class="panel-body" style="border-top:1px solid var(--line)">
-          <button class="btn accent" id="db-revoice">✦ Revoice with cloned voices</button>
+          <button class="btn accent" id="db-revoice">${icon("spark", 16)} &nbsp;Revoice with cloned voices</button>
           <span class="small muted" style="margin-left:10px">takes are time-fitted (max 1.28×) to stay in sync</span>
           <div id="db-rprog" style="margin-top:14px"></div>
           <div id="db-result" class="stack" style="margin-top:14px"></div>
@@ -481,7 +484,7 @@ export async function dubbing(page) {
         $("#db-result", page).appendChild(audioCard(res.audio));
         if (res.video) {
           const v = document.createElement("video");
-          v.src = res.video.url; v.controls = true;
+          v.src = abs(res.video.url); v.controls = true;
           v.style.width = "100%"; v.style.borderRadius = "10px";
           $("#db-result", page).appendChild(v);
         }
@@ -506,7 +509,7 @@ export async function director(page) {
     ${head("Director's Studio", "Long-form narration as a project: chunks, three takes each, pick the best, regenerate any chunk alone, export the stitch.", "Create")}
     <div class="spread" style="margin-bottom:16px">
       <span class="small muted">${projects.length} project(s)</span>
-      <button class="btn accent" id="dr-new">＋ New project</button>
+      <button class="btn accent" id="dr-new">${icon("plus", 15)} &nbsp;New project</button>
     </div>
     <div id="dr-list" class="stack"></div>
     <div id="dr-editor"></div>`);
@@ -550,7 +553,7 @@ export async function director(page) {
   const list = $("#dr-list", page);
   if (!projects.length) {
     list.innerHTML = emptyState("🎬", "No projects yet",
-      "Paste a script — it gets cut into logical chunks automatically.", "＋ New project", "dr-first");
+      "Paste a script — it gets cut into logical chunks automatically.", "New project", "dr-first");
     $("#dr-first", page).onclick = () => $("#dr-new", page).click();
   } else {
     for (const p of projects) {
@@ -584,8 +587,8 @@ export async function director(page) {
       <hr class="rule">
       <div class="spread"><h2 class="serif" style="margin:0;font-size:24px">${esc(p.title)}</h2>
         <div class="row">
-          <button class="btn" id="dr-exp">⬇ Export</button>
-          <button class="btn" id="dr-export-mp3">⬇ MP3</button>
+          <button class="btn" id="dr-exp">${icon("download", 14)} Export</button>
+          <button class="btn" id="dr-export-mp3">${icon("download", 14)} MP3</button>
         </div></div>
       <p class="small muted" style="margin-top:4px">Generate 3 takes per chunk (jittered speed/strength for natural variety), pick the winner, export.</p>
       <div class="stack" id="dr-chunks"></div>
@@ -601,8 +604,8 @@ export async function director(page) {
             <textarea data-edit rows="2" style="min-height:44px">${esc(c.text)}</textarea></div>
         </div>
         <div class="row wrap" style="margin-top:10px">
-          <button class="btn sm accent" data-gen3>✦ 3 takes</button>
-          <button class="btn sm" data-gen1>＋ 1 more</button>
+          <button class="btn sm accent" data-gen3>${icon("spark", 14)} &nbsp;3 takes</button>
+          <button class="btn sm" data-gen1>${icon("plus", 14)} &nbsp;1 more</button>
           <button class="btn sm ghost" data-saveedit>Save edit</button>
           <button class="btn sm danger" data-delchunk>✕</button>
           <span class="grow"></span>
@@ -616,14 +619,16 @@ export async function director(page) {
         takesEl.innerHTML = c.takes.map((t) => `
           <div class="list-row" style="grid-template-columns:24px 1fr auto">
             <input type="radio" name="sel_${c.id}" data-pick="${t.id}" ${c.selected === t.id ? "checked" : ""}>
-            <div><div class="t small">Take ${t.variant + 1} · ${fmtDur(t.duration)} · ${t.f0} Hz</div></div>
+            <div><div class="t small">Take ${t.variant + 1} · ${fmtDur(t.duration)} · ${t.f0} Hz</div>
+            <div class="row-wave" data-wave></div></div>
             <div class="acts">
-              <button class="btn sm" data-play="${t.file}">▶</button>
-              <button class="btn sm danger" data-deltake="${t.id}">✕</button>
+              <button class="btn sm" data-play="${t.file}" title="Play here">${icon("play", 13)}</button>
+              <button class="btn sm danger" data-deltake="${t.id}" title="Delete take">✕</button>
             </div>
           </div>`).join("");
         $$("[data-play]", takesEl).forEach((b) =>
-          b.onclick = () => window.open(`/api/projects/${pid}/audio/${b.dataset.play}`, "_blank"));
+          b.onclick = () => inlinePlay(b, `/api/projects/${pid}/audio/${b.dataset.play}`,
+            b.closest(".list-row").querySelector("[data-wave]")));
         $$("[data-pick]", takesEl).forEach((r) => r.onchange = async () => {
           await API.patch(`/api/projects/${pid}/chunks/${c.id}`, { selected: r.dataset.pick });
           toast("Take selected");
@@ -716,7 +721,7 @@ export async function agent(page) {
         <label class="checkbox"><input type="checkbox" id="ag-confirm" checked>
           <span>Ask me to approve the script and the audio before rendering</span></label>
         <div class="row" style="margin-top:14px">
-          <button class="btn accent lg" id="ag-go">✦ Start agent run</button>
+          <button class="btn accent lg" id="ag-go">${icon("spark", 17)} &nbsp;Start agent run</button>
         </div>
       </div>
       <div class="panel flush" style="display:flex;flex-direction:column">
@@ -780,12 +785,12 @@ export async function agent(page) {
   function listen(jid, btn) {
     $("#ag-state", page).textContent = "running";
     setProgress("start", 0, "Starting…");
-    const es = new EventSource(`/api/agent/${jid}/events`);
+    const es = new EventSource(abs(`/api/agent/${jid}/events`));
     es.onmessage = (m) => {
       let ev; try { ev = JSON.parse(m.data); } catch { return; }
       switch (ev.type) {
         case "stage_start":
-          addLog(`▶ ${ev.stage}: ${ev.message || ""}`, "");
+          addLog(`${icon("play", 11)} ${ev.stage}: ${ev.message || ""}`, "");
           setProgress(ev.stage, 0, ev.message);
           break;
         case "stage_progress":
@@ -810,9 +815,9 @@ export async function agent(page) {
           const r = ev.result;
           $("#ag-result", page).innerHTML = `
             <div class="stack" style="padding-top:12px">
-              <video src="${r.video_url}" controls style="width:100%;border-radius:10px"></video>
+              <video src="${abs(r.video_url)}" controls style="width:100%;border-radius:10px"></video>
               <div class="row">
-                <a class="btn accent" href="${r.video_url}" download="${esc(r.file)}">⬇ Download video</a>
+                <a class="btn accent" href="${abs(r.video_url)}" download="${esc(r.file)}">${icon("download", 15)} Download video</a>
                 <span class="pill ok">${esc(r.title || "")}</span>
                 <span class="pill">${r.scenes} scenes · ${r.duration}s</span>
               </div>
@@ -908,7 +913,7 @@ export async function connections(page) {
       </div>
       <div class="chip-add">
         <input type="text" data-newmodel="${kind}" placeholder="model id, e.g. gpt-4o-mini / gemini-2.0-flash / deepseek-chat">
-        <button class="btn sm" data-add="${kind}">＋ Add</button>
+        <button class="btn sm" data-add="${kind}">${icon("plus", 14)} &nbsp;Add</button>
       </div>
     </label>`;
 
@@ -1013,5 +1018,201 @@ export async function connections(page) {
       render();
     } catch (err) { toast("Save failed", err.message, "err"); }
     finally { busy(e.currentTarget, false); }
+  };
+}
+
+/* ============================================================
+   DubHub — any-language media, dubbed into your language
+   ============================================================ */
+
+export async function dubhub(page) {
+  const voices = await voicesSafe();
+  let dub = null;          // ingest result (state.json mirror)
+  let lines = [];          // translated lines, editable
+  let src = "en-us";
+  let target = "bn";
+
+  const SRC_LABELS = {
+    "en-us": "English", "es": "Español", "fr": "Français", "zh-cn": "中文",
+    "ja": "日本語", "ko": "한국어", "de": "Deutsch", "it": "Italiano",
+    "pt": "Português", "ru": "Русский", "hi": "हिन्दी", "tr": "Türkçe",
+    "vi": "Tiếng Việt", "nl": "Nederlands",
+  };
+
+  page.innerHTML = shell(`
+    ${pageHead("DubHub", "Feed it any video or audio. Every spoken line gets translated into the language you pick, then re-voiced by your cloned voice — timing preserved.", "Tools")}
+    <div class="grid balanced" id="dh-grid">
+      <div class="panel">
+        <label class="field"><span>Media — video or audio, any language</span>
+          <div class="dropzone" id="dh-dz">
+            <div class="dz-ico">${icon("upload", 26)}</div>
+            <h4>Drop the file here</h4>
+            <p>mp4 · mov · mkv · webm · wav · mp3 · m4a</p>
+            <input type="file" id="dh-file" accept="audio/*,video/*,.wav,.mp3,.m4a,.mp4,.mov,.mkv,.webm" hidden>
+          </div>
+        </label>
+        <label class="field"><span>Spoken language (source)</span>
+          <select id="dh-src">
+            ${Object.entries(SRC_LABELS).map(([k, l]) => `<option value="${k}" ${k === "en-us" ? "selected" : ""}>${l}</option>`).join("")}
+          </select>
+        </label>
+        <button class="btn accent" id="dh-ingest">${icon("waveform", 16)} &nbsp;Transcribe media</button>
+        <div id="dh-ingest-progress" style="margin-top:var(--s4)"></div>
+      </div>
+
+      <div class="panel" id="dh-step2" style="display:none">
+        <h3 style="margin:0 0 var(--s2)">Translate</h3>
+        <div class="row wrap" style="margin-bottom:var(--s3)">
+          <span class="small muted" id="dh-src-line"></span>
+        </div>
+        <label class="field"><span>Dub into</span>
+          <select id="dh-target"></select>
+        </label>
+        <button class="btn accent" id="dh-translate">${icon("globe", 16)} &nbsp;Translate lines</button>
+        <div class="small muted" style="margin-top:var(--s2)">First use of a language pair downloads the local NLLB model (~1.2 GB), then everything stays offline.</div>
+        <div id="dh-translate-progress" style="margin-top:var(--s4)"></div>
+      </div>
+    </div>
+
+    <section class="dash-section" id="dh-lines-section" style="display:none">
+      <h2 class="dash-h2">Lines. <span class="lp-dim">Fix any translation before dubbing.</span></h2>
+      <div class="dh-lines" id="dh-lines"></div>
+    </section>
+
+    <section class="dash-section" id="dh-render-section" style="display:none">
+      <h2 class="dash-h2">Dub it. <span class="lp-dim">Your voice, new language, original timing.</span></h2>
+      <div class="grid c2">
+        <div class="panel">
+          <label class="field"><span>Dub voice</span>
+            <select id="dh-voice">${groupedVoiceOptions(voices)}</select>
+          </label>
+          <button class="btn accent lg" id="dh-go">${icon("play", 17)} &nbsp;Render dub</button>
+          <div class="small muted" style="margin-top:var(--s2)">CPU renders every line, fits it into the original timing, then muxes the video.</div>
+        </div>
+        <div class="panel" id="dh-result">
+          <h3 style="margin:0 0 var(--s2)">Result</h3>
+          <div id="dh-out">${emptyStateHTML()}</div>
+        </div>
+      </div>
+    </section>
+  `);
+
+  function emptyStateHTML() {
+    return `<div class="empty"><div class="e-ico">${icon("video", 34)}</div>
+      <p style="margin:0">The dubbed track will land here.</p></div>`;
+  }
+
+  const dz = $("#dh-dz", page), fi = $("#dh-file", page);
+  dz.onclick = () => fi.click();
+  fi.onchange = () => {
+    if (fi.files[0]) dz.querySelector("h4").textContent = fi.files[0].name;
+  };
+  ["dragover", "dragenter"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("over"); }));
+  dz.addEventListener("drop", (e) => {
+    const f = e.dataTransfer.files[0];
+    if (f) { const dt = new DataTransfer(); dt.items.add(f); fi.files = dt.files; dz.querySelector("h4").textContent = f.name; }
+  });
+
+  // ---- step 1: transcribe ----
+  $("#dh-ingest", page).onclick = async (e) => {
+    if (!fi.files[0]) return toast("Pick a file", "Drop a video or audio first.", "warn");
+    src = $("#dh-src", page).value;
+    const btn = e.currentTarget;
+    busy(btn, true);
+    $("#dh-ingest-progress", page).innerHTML = `
+      <div class="progress indet"><i></i></div>
+      <div class="progress-label"><span>Transcribing with word timings…</span><span>CPU</span></div>`;
+    try {
+      const fd = new FormData();
+      fd.append("file", fi.files[0]);
+      fd.append("lang", src);
+      const res = await API.postForm("/api/dubbing/ingest", fd);
+      dub = res.dub;
+      lines = [];
+      $("#dh-src-line", page).textContent =
+        `${dub.segments.length} lines · ${fmtDur(dub.duration)} · ${SRC_LABELS[src] || src}`;
+      $("#dh-step2", page).style.display = "";
+      $("#dh-step2", page).scrollIntoView({ behavior: "smooth", block: "center" });
+      $("#dh-ingest-progress", page).innerHTML = "";
+      toast("Transcribed", `${dub.segments.length} spoken lines found.`);
+    } catch (err) {
+      $("#dh-ingest-progress", page).innerHTML = "";
+      toast("Transcribe failed", err.message, "err", 7000);
+    } finally { busy(btn, false); }
+  };
+
+  // ---- step 2: translate ----
+  API.get("/api/dubhub/langs").then((r) => {
+    const sel = $("#dh-target", page);
+    if (!sel) return;
+    sel.innerHTML = r.targets.map((k) =>
+      `<option value="${k}" ${k === target ? "selected" : ""}>${esc(langLabel(k))}</option>`).join("");
+    sel.value = target;
+  }).catch(() => {});
+
+  $("#dh-translate", page).onclick = async (e) => {
+    if (!dub) return toast("Transcribe first", "Analyze the media before translating.", "warn");
+    target = $("#dh-target", page).value;
+    const btn = e.currentTarget;
+    busy(btn, true);
+    $("#dh-translate-progress", page).innerHTML = `
+      <div class="progress indet"><i></i></div>
+      <div class="progress-label"><span>Translating locally (first run downloads the model)…</span><span>CPU</span></div>`;
+    try {
+      const res = await API.post(`/api/dubhub/${dub.id}/translate`, { target });
+      lines = res.lines;
+      $("#dh-lines", page).innerHTML = dub.segments.map((s, i) => `
+        <div class="dh-line">
+          <div class="dh-line-src"><span class="mono-num">${String(i + 1).padStart(2, "0")}</span> ${esc(s.text)}</div>
+          <textarea data-line="${i}" rows="2">${esc(lines[i] || "")}</textarea>
+        </div>`).join("");
+      $("#dh-lines-section", page).style.display = "";
+      $("#dh-render-section", page).style.display = "";
+      $("#dh-translate-progress", page).innerHTML = "";
+      toast("Translated", `${res.count} lines → ${langLabel(target)}.`);
+    } catch (err) {
+      $("#dh-translate-progress", page).innerHTML = "";
+      toast("Translation failed", err.message, "err", 7000);
+    } finally { busy(btn, false); }
+  };
+
+  // ---- step 3: render ----
+  $("#dh-go", page).onclick = async (e) => {
+    if (!dub) return;
+    // pick up manual edits
+    $$("#dh-lines textarea", page).forEach((t) => { lines[+t.dataset.line] = t.value; });
+    const btn = e.currentTarget;
+    busy(btn, true);
+    $("#dh-out", page).innerHTML = `
+      <div class="progress indet"><i></i></div>
+      <div class="progress-label"><span>Dubbing every line — this renders one clip per line…</span><span>CPU</span></div>`;
+    try {
+      const res = await API.post(`/api/dubhub/${dub.id}/render`,
+        { voice_id: $("#dh-voice", page).value, tau: 0.3, speed: 1.0 });
+      const out = $("#dh-out", page);
+      out.innerHTML = "";
+      const wrap = document.createElement("div");
+      wrap.innerHTML = `
+        <div class="dash-clip" style="grid-template-columns:auto 1fr">
+          <button class="btn sm accent" data-play>${icon("play", 14)}</button>
+          <div data-wave></div>
+        </div>
+        <div class="row wrap" style="margin-top:var(--s3)">
+          <a class="btn sm" href="${abs(res.audio.url)}" download="${res.audio.file}">${icon("download", 14)} Dubbed audio</a>
+          ${res.video ? `<a class="btn sm accent" href="${abs(res.video.url)}" download="${esc(res.video.file)}">${icon("video", 14)} Dubbed video</a>` : ""}
+        </div>`;
+      out.appendChild(wrap);
+      const wb = new WaveBox(wrap.querySelector("[data-wave]"), res.audio.url, { height: 56 });
+      wb.load();
+      const pb = wrap.querySelector("[data-play]");
+      wb.onPlayState = (playing) => { pb.innerHTML = playing ? icon("stop", 13) : icon("play", 13); };
+      pb.onclick = () => wb.toggle();
+      $("#dh-render-section", page).scrollIntoView({ behavior: "smooth", block: "center" });
+      toast("Dub rendered", `${langLabel(target)} audio${res.video ? " + muxed video" : ""} ready.`);
+    } catch (err) {
+      $("#dh-out", page).innerHTML = emptyStateHTML();
+      toast("Dub failed", err.message, "err", 8000);
+    } finally { busy(btn, false); }
   };
 }

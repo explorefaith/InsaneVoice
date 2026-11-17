@@ -26,5 +26,8 @@ unidic-lite
 cached_path
 eng_to_ipa
 pydub
+sentencepiece
+pillow
+vosk
 wavmark
 psutil

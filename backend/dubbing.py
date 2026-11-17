@@ -68,6 +68,7 @@ def ingest(video_path: Path, lang: str = "en-us", progress=None) -> dict:
     segments = _sentence_segments(result["words"])
     return {
         "id": uid,
+        "source_lang": lang,
         "duration": duration,
         "segments": segments,
         "srt": result["srt"],

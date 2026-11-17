@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -29,6 +30,24 @@ import storage
 sys.path.insert(0, str(config.BACKEND_DIR))
 
 app = FastAPI(title=config.APP_NAME, version="2.0.0")
+
+
+class _CorsPna(CORSMiddleware):
+    """CORS + Chrome's Private/Local-Network-Access preflight header, so the
+    hosted UI (insanevoice.vercel.app) may call this local engine."""
+
+    def preflight_response(self, request_headers):
+        resp = super().preflight_response(request_headers)
+        resp.headers["Access-Control-Allow-Private-Network"] = "true"
+        return resp
+
+
+app.add_middleware(
+    _CorsPna,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$|^https://insanevoice(-[\w-]+)?\.vercel\.app$",
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.middleware("http")
@@ -694,6 +713,78 @@ async def dubbing_revoice(did: str, req: dict):
         res = dubbing.revoice(dub, req.get("assignments") or [])
     except Exception as e:
         raise HTTPException(500, f"Revoice failed: {e}")
+    return _ok(res)
+
+
+# ---------- DubHub: cross-language dubbing ----------
+
+@app.get("/api/dubhub/langs")
+def dubhub_langs():
+    """What DubHub can do: transcription sources (vosk) x dub targets."""
+    import stt as stt_mod
+    import translation
+    return _ok({
+        "sources": sorted(stt_mod.FALLBACK_SMALL.keys()),
+        "targets": sorted(translation.supported().keys()),
+    })
+
+
+@app.post("/api/dubhub/{did}/translate")
+async def dubhub_translate(did: str, req: dict):
+    """Translate the transcribed segments into the target language (local
+    NLLB-200; weights download once on first use)."""
+    state = config.DATA_DIR / "dubbing" / Path(did).name / "state.json"
+    if not state.exists():
+        raise HTTPException(404, "Dubbing session not found.")
+    dub = json.loads(state.read_text(encoding="utf-8"))
+    target = (req.get("target") or "en").lower().strip()
+    src = dub.get("source_lang", "en-us")
+    src_code = src.split("-")[0]
+    lines = [seg["text"] for seg in dub.get("segments", [])]
+    if not lines:
+        raise HTTPException(400, "No transcribed segments to translate.")
+    try:
+        import translation
+        out = translation.translate_lines(lines, src_code, target)
+    except ValueError as e:
+        return _err(str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Translation failed: {e}")
+    dub["translated"] = out
+    dub["target_lang"] = target
+    state.write_text(json.dumps(dub, ensure_ascii=False), encoding="utf-8")
+    return _ok({"lines": out, "target": target, "count": len(out)})
+
+
+@app.post("/api/dubhub/{did}/render")
+async def dubhub_render(did: str, req: dict):
+    """Re-voice the translated segments in the target language and mux."""
+    import dubbing
+    state = config.DATA_DIR / "dubbing" / Path(did).name / "state.json"
+    if not state.exists():
+        raise HTTPException(404, "Dubbing session not found.")
+    dub = json.loads(state.read_text(encoding="utf-8"))
+    translated = dub.get("translated") or []
+    if not translated:
+        return _err("Translate first — there is no translated text to dub.")
+    target = dub.get("target_lang", "en")
+    voice_id = (req.get("voice_id") or "").strip()
+    if not voice_id:
+        return _err("Pick a voice to dub with.")
+    assignments = []
+    for i, seg in enumerate(dub.get("segments", [])):
+        text = (translated[i] if i < len(translated) else "").strip()
+        if not text:
+            continue
+        assignments.append({"index": i, "voice_id": voice_id, "text": text,
+                            "lang": target, "tau": req.get("tau", 0.3),
+                            "speed": req.get("speed", 1.0)})
+    if not assignments:
+        return _err("Every translated line is empty.")
+    try:
+        res = dubbing.revoice(dub, assignments)
+    except Exception as e:
+        raise HTTPException(500, f"Dub render failed: {e}")
     return _ok(res)
 
 

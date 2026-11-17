@@ -1,13 +1,15 @@
 /* InsaneVoice — app shell: state, api, router, navigation */
 
-import { toast, sk, esc } from "./components.js";
+import { toast, sk, esc, stopAllPlayers } from "./components.js";
+import { icon } from "./icons.js";
 import * as pages from "./pages.js";
 import * as pages2 from "./pages2.js";
+import { abs, apiBase, setApiBase } from "./net.js";
 
 /* ---------- api ---------- */
 
 async function api(path, opts = {}) {
-  const res = await fetch(path, opts);
+  const res = await fetch(abs(path), opts);
   let data = null;
   try { data = await res.json(); } catch { /* non-json */ }
   if (!res.ok || (data && data.ok === false)) {
@@ -84,6 +86,7 @@ function renderFoot() {
 /* ---------- router ---------- */
 
 const ROUTES = {
+  landing:    { title: "Welcome",              render: pages.landing,   landing: true },
   dashboard:  { title: "Dashboard",        render: pages.dashboard,  group: "Overview" },
   studio:     { title: "Studio",           render: pages.studio,     group: "Create" },
   director:   { title: "Director's Studio",render: pages2.director,  group: "Create" },
@@ -96,6 +99,7 @@ const ROUTES = {
   isolate:    { title: "Voice Isolator",   render: pages2.isolate,   group: "Tools" },
   transcribe: { title: "Transcribe",       render: pages2.transcribe,group: "Tools" },
   dubbing:    { title: "Dubbing Studio",   render: pages2.dubbing,   group: "Tools" },
+  dubhub:     { title: "DubHub",           render: pages2.dubhub,    group: "Tools" },
   agent:      { title: "Agent Studio",     render: pages2.agent,     group: "Agent" },
   connections:{ title: "Connections",      render: pages2.connections,group: "Agent" },
   history:    { title: "History",          render: pages.history,    group: "System" },
@@ -107,22 +111,23 @@ function buildNav() {
   const nav = document.getElementById("nav");
   const groups = [];
   for (const [id, r] of Object.entries(ROUTES)) {
+    if (r.landing) continue;
     let g = groups.find((x) => x.name === r.group);
     if (!g) { g = { name: r.group, items: [] }; groups.push(g); }
     g.items.push([id, r.title]);
   }
-  const ICONS = {
-    dashboard: "⌂", studio: "✎", director: "▦", dna: "◉", recorder: "●",
-    library: "☰", design: "✦", changer: "⇄", batch: "≡",
-    isolate: "◌", transcribe: "✐", dubbing: "▷",
-    agent: "★", connections: "⊕",
-    history: "↺", settings: "⚙", help: "?",
+  const NAV_ICONS = {
+    dashboard: "grid", studio: "type", director: "rows", dna: "radar",
+    recorder: "record", library: "stack", design: "wand", changer: "swap",
+    batch: "list", isolate: "isolate", transcribe: "doc", dubbing: "video",
+    agent: "bolt", connections: "nodes", history: "clock", settings: "sliders",
+    help: "help", dubhub: "globe",
   };
   nav.innerHTML = groups.map((g) => `
     <div class="group">${esc(g.name)}</div>
     ${g.items.map(([id, title]) => `
       <button data-route="${id}" title="${esc(title)}">
-        <span class="ico">${ICONS[id] || "•"}</span>
+        <span class="ico">${icon(NAV_ICONS[id] || "grid", 17)}</span>
         <span class="grow">${esc(title)}</span>
         <span class="badge" data-badge="${id}" hidden></span>
       </button>`).join("")}`).join("");
@@ -143,7 +148,7 @@ function updateNavBadges() {
 
 function currentRoute() {
   const h = location.hash.replace(/^#\//, "");
-  return ROUTES[h] ? h : "dashboard";
+  return ROUTES[h] ? h : "landing";
 }
 
 export function nav(route) {
@@ -152,17 +157,67 @@ export function nav(route) {
 
 let renderSeq = 0;
 
+/* route-change top progress bar */
+function topProgress(mode) {
+  let el = document.querySelector(".top-progress");
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "top-progress";
+    document.body.appendChild(el);
+  }
+  if (mode === "start") {
+    el.style.transition = "none";
+    el.style.width = "0";
+    void el.offsetWidth;
+    el.style.transition = "";
+    el.style.width = "38%";
+    el.classList.add("on");
+  } else {
+    el.style.width = "100%";
+    setTimeout(() => {
+      el.classList.remove("on");
+      setTimeout(() => { el.style.width = "0"; }, 400);
+    }, 220);
+  }
+}
+
+/* one staggered reveal pass per route render */
+function observeReveals(page) {
+  const els = [...page.querySelectorAll(".panel, .banner, .list-row, .voice-card, .stat, .lp-section, .lp-clip, .lp-tool")]
+    .filter((el) => !el.closest(".hero"));   // hero runs its own load sequence
+  els.forEach((el, i) => {
+    el.classList.add("reveal");
+    el.style.setProperty("--d", Math.min(i * 45, 270) + "ms");
+  });
+  if (!("IntersectionObserver" in window)) {
+    els.forEach((el) => el.classList.add("in"));
+    return;
+  }
+  const io = new IntersectionObserver((ents) => {
+    ents.forEach((en) => {
+      if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); }
+    });
+  }, { threshold: .06 });
+  els.forEach((el) => io.observe(el));
+}
+
 export async function render() {
   const route = currentRoute();
   state.route = route;
+  document.body.classList.toggle("route-landing", route === "landing");
+  if (window.__lpCleanup) { try { window.__lpCleanup(); } catch { /* page gone */ } window.__lpCleanup = null; }
   document.querySelectorAll(".nav button").forEach((b) =>
     b.classList.toggle("active", b.dataset.route === route));
   const page = document.getElementById("page");
   const seq = ++renderSeq;
+  stopAllPlayers();              // audio from the previous page stops here
+  topProgress("start");
   page.innerHTML = `<div style="margin-top:6px">${sk.page()}</div>`;
   window.scrollTo(0, 0);
   const def = ROUTES[route];
-  document.title = `${def.title} — InsaneVoice`;
+  document.title = route === "landing"
+    ? "InsaneVoice — Type. It speaks."
+    : `${def.title} — InsaneVoice`;
   try {
     await def.render(page, seq, () => seq === renderSeq);
   } catch (e) {
@@ -170,6 +225,8 @@ export async function render() {
     page.innerHTML = `
       <div class="banner err">✕ <div><b>${esc(def.title)} failed to load.</b><br>${esc(e.message)}</div></div>`;
   }
+  if (seq === renderSeq) observeReveals(page);
+  topProgress("done");
   updateNavBadges();
 }
 
@@ -177,10 +234,28 @@ window.addEventListener("hashchange", render);
 
 /* ---------- boot ---------- */
 
+/* Hosted-UI mode: this static site isn't served by the engine, so if the
+   same-origin API is missing, try the default local engine once and remember it. */
+async function autodetectEngine() {
+  if (apiBase()) return false;
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+  if (local) return false;
+  try {
+    const res = await fetch("http://127.0.0.1:8177/api/system", { signal: AbortSignal.timeout(2500) });
+    if (!res.ok) return false;
+    setApiBase("http://127.0.0.1:8177");
+    return true;
+  } catch { return false; }
+}
+
 async function boot() {
   buildNav();
   render();
   await refreshSystem();
+  if (!state.system && await autodetectEngine()) {
+    toast("Connected to your local InsaneVoice engine", "ok");
+    await refreshSystem();
+  }
   await refreshVoices();
   render();
   // poll engine status while it loads

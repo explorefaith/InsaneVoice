@@ -1,19 +1,22 @@
 /* InsaneVoice — UI components: toasts, modals, skeletons, waveform, radar */
 
+import { icon } from "./icons.js";
+import { abs } from "./net.js";
+
 /* ---------- toasts ---------- */
 
 export function toast(title, msg = "", kind = "ok", ms = 4200) {
   const box = document.getElementById("toasts");
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
-  const ico = kind === "ok" ? "✓" : kind === "err" ? "✕" : kind === "warn" ? "!" : "i";
+  const ico = kind === "ok" ? "check" : kind === "err" ? "close" : kind === "warn" ? "alert" : "info";
   el.innerHTML = `
-    <span class="t-ico">${ico}</span>
+    <span class="t-ico">${icon(ico, 15)}</span>
     <span>
       <div class="t-title"></div>
       <div class="t-msg"></div>
     </span>
-    <button class="t-x" aria-label="Dismiss">✕</button>`;
+    <button class="t-x" aria-label="Dismiss">${icon("close", 13)}</button>`;
   el.querySelector(".t-title").textContent = title;
   el.querySelector(".t-msg").textContent = msg;
   const kill = () => {
@@ -35,7 +38,7 @@ export function modal({ title, body, footer, onMount }) {
     <div class="modal" role="dialog" aria-modal="true" aria-label="">
       <div class="m-head">
         <h3></h3>
-        <button class="m-x" aria-label="Close">✕</button>
+        <button class="m-x" aria-label="Close">${icon("close", 16)}</button>
       </div>
       <div class="m-body"></div>
       <div class="m-foot"></div>
@@ -89,12 +92,15 @@ export const sk = {
   title: () => `<div class="sk sk-title"></div>`,
   block: (h = 110) => `<div class="sk sk-block" style="height:${h}px"></div>`,
   stat: () => `<div class="sk sk-stat"></div>`,
+  hero: () => `<div class="sk sk-hero"></div>`,
   page() {
     return `
-      ${this.title()}
-      ${this.line("w60")}
-      <div class="grid c4" style="margin-top:22px">${this.stat()}${this.stat()}${this.stat()}${this.stat()}</div>
-      <div style="margin-top:18px">${this.block(180)}</div>`;
+      ${this.hero()}
+      <div class="grid c4" style="margin-top:6px">${this.stat()}${this.stat()}${this.stat()}${this.stat()}</div>
+      <div class="grid c2" style="margin-top:20px">
+        <div>${this.block(190)}</div>
+        <div>${this.block(190)}</div>
+      </div>`;
   },
 };
 
@@ -125,16 +131,41 @@ export function audioCtx() {
   return actx;
 }
 
+/* registry of live players, so route changes can stop playback */
+const livePlayers = new Set();
+export function stopAllPlayers() {
+  for (const wb of [...livePlayers]) {
+    try { wb.stop(); } catch { /* already gone */ }
+  }
+}
+
+/* Inline playback for list rows: lazily build a WaveBox inside `mount`
+   (a div in the row) and toggle it. One sound plays at a time; the button
+   swaps between play/stop icons automatically. */
+export function inlinePlay(btn, url, mount, { height = 44 } = {}) {
+  if (btn._wb) { btn._wb.toggle(); return; }
+  stopAllPlayers();
+  mount.innerHTML = "";
+  const wb = new WaveBox(mount, url, { height });
+  wb.load();
+  wb.onPlayState = (playing) => {
+    btn.innerHTML = playing ? icon("stop", 13) : icon("play", 13);
+  };
+  btn._wb = wb;
+  wb.toggle();
+}
+
 export class WaveBox {
   /* canvas waveform + play control bound to one audio URL */
   constructor(container, url, { height = 72, onPlayState } = {}) {
     this.url = url;
     this.onPlayState = onPlayState;
+    livePlayers.add(this);
     this.canvas = document.createElement("canvas");
     this.canvas.className = "wave";
     this.canvas.style.height = height + "px";
     container.appendChild(this.canvas);
-    this.audio = new Audio(url);
+    this.audio = new Audio(abs(url));
     this.audio.preload = "metadata";
     this.peaks = null;
     this.progress = 0;
@@ -144,7 +175,7 @@ export class WaveBox {
   }
 
   async load() {
-    const buf = await fetch(this.url).then((r) => r.arrayBuffer());
+    const buf = await fetch(abs(this.url)).then((r) => r.arrayBuffer());
     const decoded = await audioCtx().decodeAudioData(buf);
     const ch = decoded.getChannelData(0);
     const N = 240;
@@ -168,6 +199,7 @@ export class WaveBox {
   }
 
   play() {
+    livePlayers.add(this);
     this.audio.play();
     this.canvas.classList.add("playing");
     const tick = () => {
@@ -186,6 +218,7 @@ export class WaveBox {
     this.canvas.classList.remove("playing");
     cancelAnimationFrame(this.raf);
     this.draw();
+    livePlayers.delete(this);
     this.onPlayState?.(false);
   }
 
@@ -198,8 +231,8 @@ export class WaveBox {
     g.scale(dpr, dpr);
     g.clearRect(0, 0, W, H);
     if (!this.peaks) {
-      g.fillStyle = "#7A7263";
-      g.font = "12px Segoe UI";
+      g.fillStyle = "#98A2AE";
+      g.font = "12px Instrument Sans, Segoe UI, sans-serif";
       g.textAlign = "center";
       g.fillText("loading waveform…", W / 2, H / 2 + 4);
       return;
@@ -210,12 +243,14 @@ export class WaveBox {
     const cut = Math.floor(this.progress * N);
     for (let i = 0; i < N; i++) {
       const h = Math.max(2, this.peaks[i] * (H * 0.86));
-      g.fillStyle = i <= cut && this.progress > 0 ? "#C9432B" : "#1A1712";
+      g.fillStyle = i <= cut && this.progress > 0 ? "#E8820C" : "#1C222B";
+      if (i <= cut && this.progress > 0) { g.shadowColor = "rgba(232,130,12,.35)"; g.shadowBlur = 5; }
       const x = i * bw + bw * 0.22;
       const w = bw * 0.56;
       g.beginPath();
       g.roundRect(x, mid - h / 2, w, h, w / 2);
       g.fill();
+      g.shadowBlur = 0;
     }
   }
 }
@@ -246,21 +281,21 @@ export function radarChart(container, scores, labels, size = 300) {
       const [x, y] = pt(i % n, R * ring / 4);
       i === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
     }
-    g.strokeStyle = ring === 4 ? "#B9AE97" : "#D8CFBE";
+    g.strokeStyle = ring === 4 ? "#D3DAE3" : "#E7EBF0";
     g.lineWidth = 1;
     g.stroke();
   }
   // spokes + labels
-  g.font = "11px Segoe UI";
+  g.font = "11px Instrument Sans, Segoe UI, sans-serif";
   for (let i = 0; i < n; i++) {
     const [x, y] = pt(i, R);
     g.beginPath();
     g.moveTo(cx, cy);
     g.lineTo(x, y);
-    g.strokeStyle = "#D8CFBE";
+    g.strokeStyle = "#E7EBF0";
     g.stroke();
     const [lx, ly] = pt(i, R + 17);
-    g.fillStyle = "#4A4438";
+    g.fillStyle = "#5A6472";
     g.textAlign = lx > cx + 4 ? "left" : lx < cx - 4 ? "right" : "center";
     g.fillText(labels[keys[i]], lx, ly + 3);
   }
@@ -272,9 +307,9 @@ export function radarChart(container, scores, labels, size = 300) {
     i === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
   });
   g.closePath();
-  g.fillStyle = "rgba(201, 67, 43, .16)";
+  g.fillStyle = "rgba(232, 130, 12, .15)";
   g.fill();
-  g.strokeStyle = "#C9432B";
+  g.strokeStyle = "#E8820C";
   g.lineWidth = 1.6;
   g.stroke();
   keys.forEach((k, i) => {
@@ -282,7 +317,7 @@ export function radarChart(container, scores, labels, size = 300) {
     const [x, y] = pt(i, R * v);
     g.beginPath();
     g.arc(x, y, 3, 0, 7);
-    g.fillStyle = "#C9432B";
+    g.fillStyle = "#E8820C";
     g.fill();
   });
 }
@@ -294,20 +329,8 @@ export function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-const TRASH_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/>
-  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-  <path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
-
-const PLAY_SVG = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>`;
-const DL_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-  stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/>
-  <path d="M4 21h16"/></svg>`;
-
 export function iconBtn(kind = "trash", title = "", cls = "btn sm icon") {
-  const svg = kind === "trash" ? TRASH_SVG : kind === "play" ? PLAY_SVG : DL_SVG;
-  return `<button class="${cls}" title="${esc(title)}" aria-label="${esc(title)}">${svg}</button>`;
+  return `<button class="${cls}" title="${esc(title)}" aria-label="${esc(title)}">${icon(kind, 16)}</button>`;
 }
 
 /* page header with actions pinned to the right */
