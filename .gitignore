@@ -25,3 +25,7 @@ desktop.ini
 # e2e scratch
 scripts/_e2e_out/
 third_party/
+
+# cartoon build scratch
+cartoon_work/
+cartoon_out/

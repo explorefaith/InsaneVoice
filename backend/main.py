@@ -935,6 +935,78 @@ def audio(kind: str, name: str):
     return FileResponse(p, media_type=AUDIO_MEDIA)
 
 
+# ---------- cartoon studio ----------
+
+import cartoon  # noqa: E402
+
+
+def _client_id(request: Request) -> str:
+    return request.headers.get("x-iv-client-id") or (request.client.host if request.client else "anon")
+
+
+@app.get("/api/cartoon/quota")
+def cartoon_quota(request: Request):
+    cid = _client_id(request)
+    active = cartoon.active_job_for(cid)
+    return _ok({"quota": cartoon.quota_for(cid), "active": active,
+                "configured": cartoon.PROVIDERS_FILE.exists()})
+
+
+@app.post("/api/cartoon")
+def cartoon_start(request: Request, req: dict):
+    cid = _client_id(request)
+    try:
+        job = cartoon.start_job(cid, (req or {}).get("idea") or "")
+    except PermissionError as e:
+        return _err(str(e), 403)
+    except RuntimeError as e:
+        return _err(str(e), 409)
+    except Exception as e:  # noqa: BLE001
+        return _err(f"cartoon generation unavailable: {e}", 500)
+    return _ok({"job": job}, 201)
+
+
+@app.get("/api/cartoon/library")
+def cartoon_library():
+    return _ok({"videos": cartoon.library()})
+
+
+@app.get("/api/cartoon/{jid}")
+def cartoon_job(jid: str):
+    job = cartoon.get_job(jid)
+    if not job:
+        raise HTTPException(404)
+    return _ok({"job": job})
+
+
+@app.get("/api/cartoon/{jid}/video")
+def cartoon_video(jid: str, request: Request):
+    p = cartoon.job_video(jid)
+    if not p:
+        raise HTTPException(404)
+    size = p.stat().st_size
+    rng = request.headers.get("range")
+    if rng:
+        m = re.search(r"bytes=(\d+)-(\d*)", rng)
+        start = int(m.group(1))
+        end = int(m.group(2)) if m.group(2) else size - 1
+        end = min(end, size - 1)
+        def it():
+            with open(p, "rb") as f:
+                f.seek(start)
+                remaining = end - start + 1
+                while remaining > 0:
+                    chunk = f.read(min(1 << 16, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+        return StreamingResponse(it(), status_code=206, media_type="video/mp4",
+                                 headers={"Content-Range": f"bytes {start}-{end}/{size}",
+                                          "Accept-Ranges": "bytes"})
+    return FileResponse(p, media_type="video/mp4")
+
+
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 

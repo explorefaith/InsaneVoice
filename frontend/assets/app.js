@@ -101,6 +101,7 @@ const ROUTES = {
   dubbing:    { title: "Dubbing Studio",   render: pages2.dubbing,   group: "Tools" },
   dubhub:     { title: "DubHub",           render: pages2.dubhub,    group: "Tools" },
   agent:      { title: "Agent Studio",     render: pages2.agent,     group: "Agent" },
+  cartoon:    { title: "Cartoon Studio",   render: pages2.cartoon,   group: "Agent" },
   connections:{ title: "Connections",      render: pages2.connections,group: "Agent" },
   history:    { title: "History",          render: pages.history,    group: "System" },
   settings:   { title: "Settings",         render: pages.settings,   group: "System" },
