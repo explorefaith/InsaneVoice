@@ -237,10 +237,32 @@ window.addEventListener("hashchange", render);
 
 /* Hosted-UI mode: this static site isn't served by the engine, so if the
    same-origin API is missing, try the default local engine once and remember it. */
+/* Find an engine to connect to. Order: same-origin (UI served by the engine
+   itself) -> the site's published public engine (engine.json — e.g. a
+   cloudflared tunnel; works from phones and anywhere) -> a local engine on
+   this machine (desktop case). */
 async function autodetectEngine() {
   if (apiBase()) return false;
+  // 1. same-origin API — UI served by the engine itself
+  try {
+    const res = await fetch("/api/system", { signal: AbortSignal.timeout(1500) });
+    if (res.ok) { setApiBase(""); return true; }
+  } catch { /* not engine-served */ }
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
-  if (local) return false;
+  if (!local) {
+    // 2. published public engine for this site (mobile / remote visitors)
+    try {
+      const cfg = await fetch("/engine.json", { signal: AbortSignal.timeout(1500) })
+        .then((r) => (r.ok ? r.json() : null));
+      const url = (cfg?.engineUrl || "").replace(/\/+$/, "");
+      if (url) {
+        const res = await fetch(url + "/api/system", { signal: AbortSignal.timeout(6000) });
+        if (res.ok) { setApiBase(url); return true; }
+      }
+    } catch { /* no public engine published */ }
+  }
+  // 3. local engine on this machine
+  if (!local) return false;
   try {
     const res = await fetch("http://127.0.0.1:8177/api/system", { signal: AbortSignal.timeout(2500) });
     if (!res.ok) return false;
@@ -254,7 +276,7 @@ async function boot() {
   render();
   await refreshSystem();
   if (!state.system && await autodetectEngine()) {
-    toast("Connected to your local InsaneVoice engine", "ok");
+    toast(apiBase() ? "Connected to the InsaneVoice engine" : "Connected to your local InsaneVoice engine", "ok");
     await refreshSystem();
   }
   await refreshVoices();

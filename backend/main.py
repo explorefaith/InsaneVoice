@@ -44,7 +44,9 @@ class _CorsPna(CORSMiddleware):
 
 app.add_middleware(
     _CorsPna,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$|^https://insanevoice(-[\w-]+)?\.vercel\.app$",
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+                       r"|^https://insanevoice(-[\w-]+)?\.vercel\.app$"
+                       r"|^https://[a-z0-9-]+\.trycloudflare\.com$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
