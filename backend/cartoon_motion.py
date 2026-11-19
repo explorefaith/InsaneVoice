@@ -33,12 +33,18 @@ STRICT TECHNICAL CONTRACT (violations fail automatically):
 3. MUST define: window.render = function(t) {{ ... }} — t is seconds since scene start (0..{duration:.1f}). It must deterministically set positions/rotations/opacity/scale of every animated element for that instant (pure interpolation, no randomness, no setInterval, no CSS animations/transitions).
 4. Before first render, page must already look complete at t=0 without render() being called (initial CSS state = frame 0).
 5. Flat 2D vector-cartoon look: inline SVG shapes, cohesive {mood} palette, clean silhouettes. NO text, NO letters, NO speech bubbles anywhere.
-6. BIG READABLE ACTIONS: the character truly acts out the scene — walks/crosses the screen, big arm gestures, interacts with props, reacts. At least 5 distinct movement moments, and the scene must END in a visibly different state than it started. Use eased interpolation: t01 = Math.min(1, Math.max(0, (t - a) / (b - a))); e = t01*t01*(3-2*t01).
+6. EXTREME THEATRICAL GESTURES — classic full-animation cartoon energy, never subtle:
+   - BIG AMPLITUDE: elements routinely travel 300-800px across the stage; jumps lift the character 200-400px off the ground; rotations swing 15-40 degrees; scale pulses 1.0 -> 1.35 (squash on landing, stretch on launch).
+   - ACTION PROGRESSION: the character crosses the ENTIRE screen at least once (walk/run cycle with body bob and leg swings), grabs/throws/chases a prop, and does at least one dramatic reaction — a double-take jump, a wild spin, a startled leap, or a triumphant flourish.
+   - ANTICIPATION + FOLLOW-THROUGH: every big move gets a wind-up (pull back 30-60px for 0.2-0.3s) then a fast eased strike (0.3-0.5s) that overshoots slightly and settles. This rhythm is mandatory.
+   - PACING: fast action bursts separated by short 0.5-1s beats — lively, never sluggish, never static for more than 1 second.
+   - At least 6 distinct movement moments; the scene must END in a drastically different state than it started.
+   Use eased interpolation: t01 = Math.min(1, Math.max(0, (t - a) / (b - a))); e = t01*t01*(3-2*t01); overshoot = 1 + 0.15*Math.sin(Math.min(1,t01)*Math.PI).
 7. {speak_line}
-8. CAMERA: render(t) must ALSO animate #camera — a slow cinematic push-in (scale 1.0 -> 1.12) or a gentle pan (up to 90px) across the whole scene. Every scene has camera motion.
-9. Secondary life: 2-3 background elements also move subtly (clouds drift, stars twinkle, leaves sway, particles float).
+8. CAMERA: render(t) must ALSO animate #camera — a cinematic push-in (scale 1.0 -> 1.15) or a sweeping pan (up to 130px), and it may snap tighter during the biggest action moment. Every scene has camera motion.
+9. Secondary life: 2-4 background elements also move (clouds drift, stars twinkle, leaves sway, steam puffs, particles float).
 10. Everything stays inside the stage.
-11. Keep it compact — under 220 lines.
+11. Keep it compact — under 240 lines.
 
 Return ONLY the HTML file content (no explanations, no markdown fences)."""
 
@@ -128,10 +134,13 @@ def request_scene_html(text_cfg: dict, scene: dict, duration: float,
     if speak:
         speak_line = (f"MOUTH SYNC: the character SPEAKS from t={speak[0]:.1f} to "
                       f"t={speak[1]:.1f} — animate an obvious talking mouth (open/close "
-                      f"3-4 cycles per second) exactly during that window; gentle smile "
-                      f"outside it. Blink naturally 2-3 times overall.")
+                      f"3-4 cycles per second) exactly during that window, with the head "
+                      f"and whole body bobbing/gesturing along to the speech rhythm "
+                      f"(arms wave, lean forward/back); gentle smile outside it. Blink "
+                      f"naturally 2-3 times overall.")
     else:
-        speak_line = "No speaking in this scene — expressive face and body language only."
+        speak_line = ("No speaking in this scene — big expressive face and wild body "
+                      "language instead.")
     prompt = PROMPT_TEMPLATE.format(duration=duration, visual=scene["visual"],
                                     character=character, width=WIDTH, height=HEIGHT,
                                     speak_line=speak_line, mood=mood)
