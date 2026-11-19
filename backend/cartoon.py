@@ -138,7 +138,7 @@ def library(limit: int = 6) -> list[dict]:
             for j in done[:limit]]
 
 
-def start_job(client_id: str, idea: str) -> dict:
+def start_job(client_id: str, idea: str, mode: str = "motion") -> dict:
     with _lock:
         if active_job_for(client_id):
             raise RuntimeError("Your previous cartoon is still generating — one at a time.")
@@ -150,6 +150,7 @@ def start_job(client_id: str, idea: str) -> dict:
         job = {"id": jid, "client": client_id, "status": "running",
                "stage": "script", "progress": 0.02,
                "message": "Writing the script…", "idea": (idea or "").strip(),
+               "mode": "storybook" if mode == "storybook" else "motion",
                "started": time.time(), "error": None}
         _jobs[jid] = job
         _prune_old_jobs()
@@ -213,8 +214,11 @@ def _worker(job: dict) -> None:
     try:
         p = _providers()
         script = _stage_script(job, p, d)
-        _stage_images(job, p, d, script)
         durs = _stage_tts(job, p, d, script)
+        if job.get("mode") == "motion":
+            _stage_motion(job, p, d, script, durs)
+        else:
+            _stage_images(job, p, d, script)
         _stage_music(d)
         _stage_render(job, d, script, durs)
         video = d / "cartoon.mp4"
@@ -380,6 +384,84 @@ def _stage_tts(job: dict, p: dict, d: Path, script: dict) -> dict:
     return durs
 
 
+# ---------- stage 3b: HTML motion scenes (with image fallback) ----------
+
+def scene_len(nd: float) -> float:
+    """Scene duration from narration length — shared by capture and render."""
+    return max(round(nd / 1.10 + 1.0, 2), 5.5)   # 0.4s lead + 0.6s tail, 1.10x
+
+
+def _stage_motion(job: dict, p: dict, d: Path, script: dict, durs: dict) -> None:
+    import cartoon_motion as cmotion
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    n = len(script["scenes"])
+    character = ("Pip, a small round orange robot with big round teal eyes, "
+                 "stubby arms and legs, one antenna with a glowing cyan ball on top")
+    # deepseek writes HTML ~5x faster than mimo — flip the order for this stage
+    cfg_motion = {**p["text"], "models": list(reversed(p["text"]["models"]))}
+
+    # phase A — parallel LLM calls (network-bound, no browser)
+    raw: dict[int, str] = {}
+    errors: dict[int, str] = {}
+    lens = {i: scene_len(durs.get(f"n{i}", 0.0)) for i in range(1, n + 1)}
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futs = {pool.submit(cmotion.request_scene_html, cfg_motion, sc, lens[i],
+                            character): i
+                for i, sc in enumerate(script["scenes"], 1)}
+        done = 0
+        for fut in as_completed(futs):
+            i = futs[fut]
+            done += 1
+            _update(job["id"], stage="animation", progress=0.30 + 0.12 * done / n,
+                    message=f"Writing animation {done} of {n}…")
+            try:
+                raw[i] = fut.result()
+            except Exception as e:          # noqa: BLE001
+                errors[i] = str(e)
+
+    # phase B — serial: write, validate in Chrome, capture frames
+    with cmotion.MotionRenderer() as mr:
+        for i, sc in enumerate(script["scenes"], 1):
+            _update(job["id"], stage="animation", progress=0.42 + 0.13 * i / n,
+                    message=f"Filming scene {i} of {n}…")
+            frames_dir = d / f"frames{i}"
+            if frames_dir.exists() and any(frames_dir.iterdir()):
+                continue
+            html_path = d / f"scene{i}.html"
+            ok = False
+            # candidate 1: the parallel result from phase A
+            if i in raw:
+                try:
+                    html_path.write_text(raw[i])
+                    mr.validate(html_path, lens[i])
+                    mr.capture(html_path, lens[i], frames_dir)
+                    ok = True
+                except Exception as e:      # noqa: BLE001
+                    print(f"[cartoon] scene {i}: parallel candidate rejected ({e})",
+                          flush=True)
+            # candidate 2: one serial retry (mimo first) — only if needed
+            if not ok:
+                try:
+                    html = cmotion.request_scene_html(p["text"], sc, lens[i], character)
+                    html_path.write_text(html)
+                    mr.validate(html_path, lens[i])
+                    mr.capture(html_path, lens[i], frames_dir)
+                    ok = True
+                except Exception as e:      # noqa: BLE001
+                    errors[i] = str(e)
+                    print(f"[cartoon] scene {i}: html request failed: {e}", flush=True)
+            if ok:
+                errors.pop(i, None)
+                print(f"[cartoon] scene {i}: motion frames OK", flush=True)
+            else:
+                print(f"[cartoon] scene {i}: motion failed — image fallback", flush=True)
+                png = d / f"scene{i}.png"
+                if not png.exists():
+                    _gen_image(p, f"{sc['visual']}. {STYLE}", png)
+                time.sleep(1.5)
+    _update(job["id"], stage="animation", progress=0.55, message="Scenes animated.")
+
+
 # ---------- stage 4: lullaby ----------
 
 def _place(sig, t, n, sr):
@@ -436,33 +518,41 @@ def _stage_music(d: Path) -> None:
 # ---------- stage 5: render ----------
 
 def _stage_render(job: dict, d: Path, script: dict, durs: dict) -> None:
+    import cartoon_motion as cmotion
+    fps = cmotion.FPS
     n = len(script["scenes"])
     clips = []
     for i, sc in enumerate(script["scenes"], 1):
         _update(job["id"], stage="render", progress=0.68 + 0.24 * i / n,
                 message=f"Rendering clip {i} of {n}…")
         nd = durs.get(f"n{i}", 0.0)
-        di = max(round(nd / 1.10 + 1.0, 2), 5.5)   # 0.4s lead + 0.6s tail, 1.10x
+        di = scene_len(nd)
         cp = d / f"clip{i}.mp4"
         clips.append((cp, di))
         if cp.exists():
             continue
         cap = d / f"cap{i}.txt"
         cap.write_text(sc.get("caption", ""))
-        frames = max(int(di * 30), 2)
-        vf = (f"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,"
-              f"zoompan=z='min(1+0.0009*on,1.10)':x='iw/2-(iw/zoom/2)':"
-              f"y='ih/2-(ih/zoom/2)':d={frames}:s=1920x1080:fps=30")
+        frames_dir = d / f"frames{i}"
+        frames_seq = frames_dir.exists() and any(frames_dir.iterdir())
+        frames = max(int(di * fps), 2)
+        if frames_seq:
+            vf = "scale=1920:1080,format=yuv420p"
+            vcmd = ["-framerate", str(fps), "-i", str(frames_dir / "f%05d.png")]
+        else:
+            vf = (f"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,"
+                  f"zoompan=z='min(1+0.0009*on,1.10)':x='iw/2-(iw/zoom/2)':"
+                  f"y='ih/2-(ih/zoom/2)':d={frames}:s=1920x1080:fps={fps}")
+            vcmd = ["-i", str(d / f"scene{i}.png")]
         if sc.get("caption"):
             vf += (f",drawtext=fontfile={FONT}:textfile={cap}:fontsize=46:"
                    f"fontcolor=white:borderw=4:bordercolor=black@0.65:"
                    f"x=(w-text_w)/2:y=h-150")
-        vf += ",format=yuv420p"
-        subprocess.run(["ffmpeg", "-y", "-v", "error",
-                        "-i", str(d / f"scene{i}.png"), "-i", str(d / f"narr{i}.mp3"),
+        subprocess.run(["ffmpeg", "-y", "-v", "error"] + vcmd +
+                       ["-i", str(d / f"narr{i}.mp3"),
                         "-filter_complex", vf,
                         "-af", "atempo=1.10,adelay=400:all=1,apad",
-                        "-t", str(di), "-r", "30",
+                        "-t", str(di), "-r", str(fps),
                         "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
                         "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                         str(cp)], check=True)

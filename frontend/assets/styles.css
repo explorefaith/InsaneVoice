@@ -1313,3 +1313,13 @@ body.route-landing .main { padding: 0; max-width: none; }
 }
 .dh-line textarea { min-height: 0; }
 @media (max-width: 800px) { .dh-line { grid-template-columns: 1fr; } }
+
+/* selectable option chips (cartoon studio mode) */
+.chip.ok {
+  border-color: var(--sig);
+  background: color-mix(in srgb, var(--sig) 10%, var(--panel));
+  color: var(--text);
+  cursor: pointer;
+}
+#ct-mode .chip { cursor: pointer; padding-right: 12px; }
+#ct-mode .chip:hover { border-color: var(--sig); }

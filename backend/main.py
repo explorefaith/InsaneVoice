@@ -958,7 +958,8 @@ def cartoon_quota(request: Request):
 def cartoon_start(request: Request, req: dict):
     cid = _client_id(request)
     try:
-        job = cartoon.start_job(cid, (req or {}).get("idea") or "")
+        job = cartoon.start_job(cid, (req or {}).get("idea") or "",
+                                (req or {}).get("mode") or "motion")
     except PermissionError as e:
         return _err(str(e), 403)
     except RuntimeError as e:
