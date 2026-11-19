@@ -18,24 +18,27 @@ import urllib.error
 from pathlib import Path
 
 CHROME = "/usr/bin/google-chrome"
-FPS = 12
+FPS = 15
 WIDTH, HEIGHT = 1920, 1080
 
-PROMPT_TEMPLATE = """You are an animation director. Write ONE self-contained HTML file that renders a single 2D cartoon scene as a programmatic animation.
+PROMPT_TEMPLATE = """You are an animation director making a real animated short. Write ONE self-contained HTML file that renders a single 2D cartoon scene as a programmatic animation — it must feel like a frame from an animated film, not a slideshow.
 
-Cartoon scene. Duration: {duration:.1f} seconds.
+Scene. Duration: {duration:.1f} seconds. Mood: {mood}.
 Scene description: {visual}
-Character (keep consistent): {character}
+Main character (keep EXACTLY consistent): {character}
 
 STRICT TECHNICAL CONTRACT (violations fail automatically):
 1. One file: <!doctype html> ... </html>. All CSS/JS inline. NO external resources, no fonts, no images, no network.
-2. A fixed stage exactly {width}x{height} px (body margin 0, stage div absolute, overflow hidden).
+2. A fixed stage exactly {width}x{height} px (body margin 0, stage div absolute, overflow hidden). ALL scene content lives inside one wrapper <div id="camera">.
 3. MUST define: window.render = function(t) {{ ... }} — t is seconds since scene start (0..{duration:.1f}). It must deterministically set positions/rotations/opacity/scale of every animated element for that instant (pure interpolation, no randomness, no setInterval, no CSS animations/transitions).
-4. Before first render, page must already look complete at t=0 without render() being called (initial CSS state = frame 0), so even a static screenshot is a valid cartoon frame.
-5. Flat 2D vector-cartoon look: inline SVG shapes (circles, ellipses, paths), soft warm night palette, clean silhouettes. NO text, NO letters, NO speech bubbles anywhere.
-6. Real motion (this is a motion cartoon, not a still): the character visibly acts out the scene — e.g. shifts/bobs, blinks (eyes scale-y), arm/antenna moves, props drift; use smooth eased interpolation like t01 = Math.min(1, Math.max(0, (t - a) / (b - a))) and e = t01*t01*(3-2*t01). At least 4 distinct movement moments across the duration. Gentle motion, no strobe/flash.
-7. Everything must stay inside the stage; nothing important cut off.
-8. Keep it compact — under 250 lines. Simple, readable code beats elaborate code.
+4. Before first render, page must already look complete at t=0 without render() being called (initial CSS state = frame 0).
+5. Flat 2D vector-cartoon look: inline SVG shapes, cohesive {mood} palette, clean silhouettes. NO text, NO letters, NO speech bubbles anywhere.
+6. BIG READABLE ACTIONS: the character truly acts out the scene — walks/crosses the screen, big arm gestures, interacts with props, reacts. At least 5 distinct movement moments, and the scene must END in a visibly different state than it started. Use eased interpolation: t01 = Math.min(1, Math.max(0, (t - a) / (b - a))); e = t01*t01*(3-2*t01).
+7. {speak_line}
+8. CAMERA: render(t) must ALSO animate #camera — a slow cinematic push-in (scale 1.0 -> 1.12) or a gentle pan (up to 90px) across the whole scene. Every scene has camera motion.
+9. Secondary life: 2-3 background elements also move subtly (clouds drift, stars twinkle, leaves sway, particles float).
+10. Everything stays inside the stage.
+11. Keep it compact — under 220 lines.
 
 Return ONLY the HTML file content (no explanations, no markdown fences)."""
 
@@ -118,11 +121,20 @@ class MotionRenderer:
 
 
 def request_scene_html(text_cfg: dict, scene: dict, duration: float,
-                       character: str) -> str:
+                       character: str, speak=None, mood: str = "cozy") -> str:
     """LLM-only step (no browser) — safe to run in parallel threads.
-    Tries each model in text_cfg["models"] order once."""
+    Tries each model in text_cfg["models"] order once. `speak` = (from, to)
+    seconds — the character is talking during that window (mouth animation)."""
+    if speak:
+        speak_line = (f"MOUTH SYNC: the character SPEAKS from t={speak[0]:.1f} to "
+                      f"t={speak[1]:.1f} — animate an obvious talking mouth (open/close "
+                      f"3-4 cycles per second) exactly during that window; gentle smile "
+                      f"outside it. Blink naturally 2-3 times overall.")
+    else:
+        speak_line = "No speaking in this scene — expressive face and body language only."
     prompt = PROMPT_TEMPLATE.format(duration=duration, visual=scene["visual"],
-                                    character=character, width=WIDTH, height=HEIGHT)
+                                    character=character, width=WIDTH, height=HEIGHT,
+                                    speak_line=speak_line, mood=mood)
     last_err = None
     for model in text_cfg["models"]:
         try:

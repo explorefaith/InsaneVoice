@@ -35,11 +35,12 @@ DAILY_LIMIT = 1          # per client per local day
 KEEP_JOBS = 8
 
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-STYLE = ("Flat 2D vector cartoon, storybook illustration, clean shapes, soft warm "
-         "night lighting, cozy palette. Character: Pip, a small round orange robot "
-         "with big round teal eyes, stubby arms and legs, one antenna with a glowing "
-         "cyan ball on top. Wide 16:9 cinematic composition. No text, no speech "
-         "bubbles, no watermark.")
+STYLE_BASE = ("Flat 2D vector cartoon, storybook illustration, clean shapes, soft "
+              "warm lighting, cohesive palette. Wide 16:9 cinematic composition. "
+              "No text, no speech bubbles, no watermark.")
+
+TRANSITIONS = ("fade", "smoothleft", "circleopen", "wipeleft", "dissolve",
+               "slideright", "radial", "smoothup")
 
 _lock = threading.Lock()          # one job at a time
 _jobs: dict = {}                  # job_id -> job dict (mirror of jobs.json)
@@ -213,7 +214,7 @@ def _worker(job: dict) -> None:
     d.mkdir(parents=True, exist_ok=True)
     try:
         p = _providers()
-        script = _stage_script(job, p, d)
+        script = _stage_script(job, p, d)          # includes premise stage
         durs = _stage_tts(job, p, d, script)
         if job.get("mode") == "motion":
             _stage_motion(job, p, d, script, durs)
@@ -235,17 +236,60 @@ def _worker(job: dict) -> None:
                 error=msg[:400], finished=time.time())
 
 
+# ---------- stage 0: premise (fresh story + character every run) ----------
+
+def _stage_premise(job: dict, p: dict, d: Path) -> dict:
+    f = d / "premise.json"
+    if f.exists():
+        return json.loads(f.read_text())
+    idea = (job.get("idea") or "").strip()
+    used = [j.get("title") for j in _jobs.values() if j.get("title")]
+    avoid = ("Avoid these already-used premises: " + "; ".join(used[:10]) + ". ") if used else ""
+    if idea:
+        task = f'Build the cartoon premise around this user idea: "{idea}".'
+    else:
+        task = ("Invent a COMPLETELY RANDOM, fresh premise: pick a surprising main "
+                "character (an animal, object, or little creature — not a robot), an "
+                "unexpected setting (space, jungle, kitchen, ocean floor, rooftop, "
+                "library, mountain, toy shop...), a tiny problem, and a warm or funny "
+                "resolution with a small twist. Vary the genre boldly. " + avoid)
+    prompt = f"""{task}
+
+Return STRICT JSON only, no markdown fences:
+{{"title": "...", "character": "one-sentence physical description of the main character for an artist — shape, colors, one distinguishing feature", "logline": "one sentence: what happens", "mood": "one of: cozy, playful, dreamy, adventurous, funny"}}"""
+    last_err = None
+    for model in p["text"]["models"]:
+        try:
+            r = _post_json(f"{p['text']['base_url']}/chat/completions",
+                           p["text"]["api_key"], {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 1.0, "max_tokens": 500}, timeout=120)
+            txt = r["choices"][0]["message"]["content"].strip()
+            txt = txt.split("```json")[-1].split("```")[0].strip()
+            data = json.loads(txt[txt.index("{"): txt.rindex("}") + 1])
+            assert data.get("title") and data.get("character") and data.get("logline")
+            data.setdefault("mood", "cozy")
+            f.write_text(json.dumps(data, indent=1))
+            print(f"[cartoon] premise: {data['title']} — {data['logline']}", flush=True)
+            return data
+        except urllib.error.HTTPError as e:
+            last_err = f"{model}: HTTP {e.code}"; time.sleep(4)
+        except Exception as e:      # noqa: BLE001
+            last_err = f"{model}: {e}"; time.sleep(4)
+    raise RuntimeError(f"premise generation failed: {last_err}")
+
+
 # ---------- stage 1: script ----------
 
 def _stage_script(job: dict, p: dict, d: Path) -> dict:
     _update(job["id"], stage="script", progress=0.05, message="Writing the script…")
-    idea = job.get("idea")
-    idea_block = (f'Story idea from the user: "{idea}". Build the plot around it.'
-                  if idea else
-                  'Story: Pip, a small orange robot, cannot fall asleep. He tries '
-                  'counting sheep (they beep), reads a manual, hums to his antenna '
-                  'light. Finally his antenna ball glows like a tiny star and he '
-                  'drifts off dreaming of flying among real stars.')
+    premise = _stage_premise(job, p, d)
+    idea_block = (f'Title: "{premise["title"]}". '
+                  f'Main character: {premise["character"]} '
+                  f'(this EXACT character must appear in every scene, same colors/shape). '
+                  f'Story: {premise["logline"]} Expand it into 8 beats + closing card. '
+                  f'Mood: {premise.get("mood", "cozy")}.')
     prompt = f"""Write a script for a 60-second heartwarming 2D cartoon for a faceless YouTube channel.
 
 {idea_block}
@@ -256,9 +300,9 @@ Return STRICT JSON only, no markdown fences, exactly this shape:
 ]}}
 
 Rules:
-- Exactly 9 items. Items 1-8 are story scenes; item 9 is the closing card (narration one short goodnight line, visual: cozy "the end" style card of the main character sleeping, caption empty string "").
+- Exactly 9 items. Items 1-8 are story scenes; item 9 is the closing card (narration one short warm goodnight/goodbye line, visual: cozy "the end" style card of the main character resting/safe, caption empty string "").
 - Total narration 135-150 words (~60 seconds at a calm storytelling pace), split across scenes (roughly 15-20 words each, closing card 3-6 words).
-- "visual": a detailed scene description for an image generator. Mention the main character + what else is in frame + mood. Do NOT include art-style words (style is added separately).
+- "visual": a detailed scene description. Mention the main character's ACTION + what else is in frame + mood. Every scene must feature the main character. Do NOT include art-style words (style is added separately).
 - "caption": max 5 words, shown as on-screen text. For the last card use ""."""
     payload = {"messages": [{"role": "user", "content": prompt}],
                "temperature": 0.8, "max_tokens": 2000}
@@ -336,13 +380,17 @@ def _qc_images(p: dict, pngs: list[Path]) -> set[int]:
 
 def _stage_images(job: dict, p: dict, d: Path, script: dict) -> None:
     n = len(script["scenes"])
+    try:
+        character = json.loads((d / "premise.json").read_text())["character"]
+    except Exception:                       # noqa: BLE001
+        character = "a small round orange robot with big teal eyes"
     pngs = []
     for i, sc in enumerate(script["scenes"], 1):
         _update(job["id"], stage="images", progress=0.05 + 0.42 * i / n,
                 message=f"Painting scene {i} of {n}…")
         png = d / f"scene{i}.png"
         if not png.exists():
-            _gen_image(p, f"{sc['visual']}. {STYLE}", png)
+            _gen_image(p, f"{sc['visual']}. Character: {character}. {STYLE_BASE}", png)
         pngs.append(png)
         time.sleep(1.5)
     _update(job["id"], progress=0.5, message="Checking scenes with vision…")
@@ -351,7 +399,7 @@ def _stage_images(job: dict, p: dict, d: Path, script: dict) -> None:
         if 1 <= i + 1 <= n:
             png = d / f"scene{i+1}.png"
             png.unlink(missing_ok=True)
-            _gen_image(p, f"{script['scenes'][i]['visual']}. {STYLE}", png)
+            _gen_image(p, f"{script['scenes'][i]['visual']}. Character: {character}. {STYLE_BASE}", png)
             time.sleep(1.5)
 
 
@@ -395,8 +443,11 @@ def _stage_motion(job: dict, p: dict, d: Path, script: dict, durs: dict) -> None
     import cartoon_motion as cmotion
     from concurrent.futures import ThreadPoolExecutor, as_completed
     n = len(script["scenes"])
-    character = ("Pip, a small round orange robot with big round teal eyes, "
-                 "stubby arms and legs, one antenna with a glowing cyan ball on top")
+    try:
+        premise = json.loads((d / "premise.json").read_text())
+        character, mood = premise["character"], premise.get("mood", "cozy")
+    except Exception:                       # noqa: BLE001 — premise optional
+        character, mood = "a small round orange robot with big teal eyes", "cozy"
     # deepseek writes HTML ~5x faster than mimo — flip the order for this stage
     cfg_motion = {**p["text"], "models": list(reversed(p["text"]["models"]))}
 
@@ -406,7 +457,10 @@ def _stage_motion(job: dict, p: dict, d: Path, script: dict, durs: dict) -> None
     lens = {i: scene_len(durs.get(f"n{i}", 0.0)) for i in range(1, n + 1)}
     with ThreadPoolExecutor(max_workers=3) as pool:
         futs = {pool.submit(cmotion.request_scene_html, cfg_motion, sc, lens[i],
-                            character): i
+                            character,
+                            (0.4, 0.4 + durs.get(f"n{i}", 0.0) / 1.10)
+                            if durs.get(f"n{i}") else None,
+                            mood): i
                 for i, sc in enumerate(script["scenes"], 1)}
         done = 0
         for fut in as_completed(futs):
@@ -442,7 +496,10 @@ def _stage_motion(job: dict, p: dict, d: Path, script: dict, durs: dict) -> None
             # candidate 2: one serial retry (mimo first) — only if needed
             if not ok:
                 try:
-                    html = cmotion.request_scene_html(p["text"], sc, lens[i], character)
+                    html = cmotion.request_scene_html(
+                        p["text"], sc, lens[i], character,
+                        (0.4, 0.4 + durs.get(f"n{i}", 0.0) / 1.10)
+                        if durs.get(f"n{i}") else None, mood)
                     html_path.write_text(html)
                     mr.validate(html_path, lens[i])
                     mr.capture(html_path, lens[i], frames_dir)
@@ -457,7 +514,7 @@ def _stage_motion(job: dict, p: dict, d: Path, script: dict, durs: dict) -> None
                 print(f"[cartoon] scene {i}: motion failed — image fallback", flush=True)
                 png = d / f"scene{i}.png"
                 if not png.exists():
-                    _gen_image(p, f"{sc['visual']}. {STYLE}", png)
+                    _gen_image(p, f"{sc['visual']}. Character: {character}. {STYLE_BASE}", png)
                 time.sleep(1.5)
     _update(job["id"], stage="animation", progress=0.55, message="Scenes animated.")
 
@@ -567,7 +624,8 @@ def _stage_render(job: dict, d: Path, script: dict, durs: dict) -> None:
     offset = 0.0
     for k in range(1, n):
         offset += durs_c[k - 1] - xf
-        fc.append(f"{prev_v}[{k}:v]xfade=transition=fade:duration={xf}:offset={offset:.3f}[v{k}]")
+        trans = TRANSITIONS[(k - 1) % len(TRANSITIONS)]
+        fc.append(f"{prev_v}[{k}:v]xfade=transition={trans}:duration={xf}:offset={offset:.3f}[v{k}]")
         fc.append(f"{prev_a}[{k}:a]acrossfade=d={xf}:c1=tri:c2=tri[a{k}]")
         prev_v, prev_a = f"[v{k}]", f"[a{k}]"
     fc.append(f"[{n}:a]volume=0.16[mus]")

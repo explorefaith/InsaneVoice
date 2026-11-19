@@ -1259,8 +1259,8 @@ export async function cartoon(page, seq, fresh) {
     ${quota && quota.remaining <= 0 && !active ? `
       <div class="banner warn">◍ <div><b>Today's free cartoon is used.</b><br>The counter resets at midnight — come back tomorrow.</div></div>` : ""}
     <div class="panel">
-      <label class="field"><span>Story idea (optional — leave blank for the classic Pip story)</span>
-        <textarea id="ct-idea" maxlength="400" placeholder="e.g. a little cat who dreams of flying, or a robot learning to dance"></textarea>
+      <label class="field"><span>Story idea (optional — leave blank and get a fresh random story every time)</span>
+        <textarea id="ct-idea" maxlength="400" placeholder="e.g. a shy penguin who wants to be a lighthouse keeper — or leave blank for a surprise"></textarea>
       </label>
       <div class="row wrap" style="margin-top:var(--s2);gap:8px" id="ct-mode">
         <button class="chip ok" data-mode="motion">✦ Motion cartoon — animated scenes, frame-by-frame</button>
