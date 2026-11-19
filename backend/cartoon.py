@@ -42,6 +42,19 @@ STYLE_BASE = ("Flat 2D vector cartoon, storybook illustration, clean shapes, sof
 TRANSITIONS = ("fade", "smoothleft", "circleopen", "wipeleft", "dissolve",
                "slideright", "radial", "smoothup")
 
+# caption fonts per script system (drawtext needs a font that covers the script)
+LANG_FONT = {
+    "hi": "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf",
+    "bn": "/usr/share/fonts/truetype/noto/NotoSansBengali-Bold.ttf",
+}
+LANG_DIRECTIVE = {
+    "hi": "Write ALL narration and captions in HINDI (Devanagari script) — natural, "
+          "simple, warm storytelling Hindi that a text-to-speech voice reads smoothly.",
+}
+
+def _caption_font(lang: str) -> str:
+    return LANG_FONT.get((lang or "en").lower(), FONT)
+
 _lock = threading.Lock()          # one job at a time
 _jobs: dict = {}                  # job_id -> job dict (mirror of jobs.json)
 
@@ -139,7 +152,7 @@ def library(limit: int = 6) -> list[dict]:
             for j in done[:limit]]
 
 
-def start_job(client_id: str, idea: str, mode: str = "motion") -> dict:
+def start_job(client_id: str, idea: str, mode: str = "motion", lang: str = "en") -> dict:
     with _lock:
         if active_job_for(client_id):
             raise RuntimeError("Your previous cartoon is still generating — one at a time.")
@@ -152,6 +165,7 @@ def start_job(client_id: str, idea: str, mode: str = "motion") -> dict:
                "stage": "script", "progress": 0.02,
                "message": "Writing the script…", "idea": (idea or "").strip(),
                "mode": "storybook" if mode == "storybook" else "motion",
+               "lang": (lang or "en").lower()[:8],
                "started": time.time(), "error": None}
         _jobs[jid] = job
         _prune_old_jobs()
@@ -292,6 +306,7 @@ def _stage_script(job: dict, p: dict, d: Path) -> dict:
                   f'Mood: {premise.get("mood", "cozy")}.')
     prompt = f"""Write a script for a 60-second heartwarming 2D cartoon for a faceless YouTube channel.
 
+{LANG_DIRECTIVE.get((job.get("lang") or "en").lower(), "")}
 {idea_block}
 
 Return STRICT JSON only, no markdown fences, exactly this shape:
@@ -409,6 +424,8 @@ def _stage_tts(job: dict, p: dict, d: Path, script: dict) -> dict:
     durs = {}
     n = sum(1 for sc in script["scenes"] if sc.get("narration"))
     done = 0
+    lang = (job.get("lang") or "en").lower()
+    cloud_dead = False          # once the daily cap is hit, stop wasting retries
     for i, sc in enumerate(script["scenes"], 1):
         if not sc.get("narration"):
             continue
@@ -416,20 +433,45 @@ def _stage_tts(job: dict, p: dict, d: Path, script: dict) -> dict:
                 message=f"Recording narration {done+1} of {n}…")
         mp3 = d / f"narr{i}.mp3"
         if not mp3.exists():
-            req = urllib.request.Request(f"{p['tts']['base_url']}/audio/speech",
-                data=json.dumps({"model": p["tts"]["model"],
-                                 "input": sc["narration"],
-                                 "response_format": "mp3"}).encode(),
-                headers={"Authorization": f"Bearer {p['tts']['api_key']}",
-                         "Content-Type": "application/json"})
-            def _tts():
-                with urllib.request.urlopen(req, timeout=120) as r:
-                    mp3.write_bytes(r.read())
-            _retry(_tts, tries=3, wait=4)
+            used_cloud = False
+            if not cloud_dead:
+                try:
+                    req = urllib.request.Request(f"{p['tts']['base_url']}/audio/speech",
+                        data=json.dumps({"model": p["tts"]["model"],
+                                         "input": sc["narration"],
+                                         "response_format": "mp3"}).encode(),
+                        headers={"Authorization": f"Bearer {p['tts']['api_key']}",
+                                 "Content-Type": "application/json"})
+                    def _tts():
+                        with urllib.request.urlopen(req, timeout=120) as r:
+                            mp3.write_bytes(r.read())
+                    _retry(_tts, tries=3, wait=4)
+                    used_cloud = True
+                except Exception as e:      # noqa: BLE001 — offline fallback
+                    if "429" not in str(e):
+                        raise
+                    cloud_dead = True       # daily cap — straight to MMS from now on
+                    print(f"[cartoon] tts {i}: cloud daily cap hit — local MMS for the "
+                          f"rest of this job", flush=True)
+            if not used_cloud:
+                print(f"[cartoon] tts {i}: local MMS narration", flush=True)
+                _mms_tts(sc["narration"], lang, mp3)
         durs[f"n{i}"] = _probe(mp3)
         done += 1
         time.sleep(1)
     return durs
+
+
+def _mms_tts(text: str, lang: str, out_path: Path) -> None:
+    """Offline narration with the engine's Meta MMS base TTS (no cloud quota)."""
+    import engine, langs
+    iso = langs.MMS_ISO.get(lang)
+    if not iso:
+        raise RuntimeError(f"cloud TTS rate-limited and no offline voice for '{lang}'")
+    engine.mms_generate(text, iso, str(out_path) + ".wav", speed=1.10)
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(out_path) + ".wav",
+                    "-b:a", "128k", str(out_path)], check=True)
+    Path(str(out_path) + ".wav").unlink(missing_ok=True)
 
 
 # ---------- stage 3b: HTML motion scenes (with image fallback) ----------
@@ -577,6 +619,7 @@ def _stage_music(d: Path) -> None:
 def _stage_render(job: dict, d: Path, script: dict, durs: dict) -> None:
     import cartoon_motion as cmotion
     fps = cmotion.FPS
+    cap_font = _caption_font(job.get("lang", "en"))
     n = len(script["scenes"])
     clips = []
     for i, sc in enumerate(script["scenes"], 1):
@@ -602,7 +645,7 @@ def _stage_render(job: dict, d: Path, script: dict, durs: dict) -> None:
                   f"y='ih/2-(ih/zoom/2)':d={frames}:s=1920x1080:fps={fps}")
             vcmd = ["-i", str(d / f"scene{i}.png")]
         if sc.get("caption"):
-            vf += (f",drawtext=fontfile={FONT}:textfile={cap}:fontsize=46:"
+            vf += (f",drawtext=fontfile={cap_font}:textfile={cap}:fontsize=46:"
                    f"fontcolor=white:borderw=4:bordercolor=black@0.65:"
                    f"x=(w-text_w)/2:y=h-150")
         subprocess.run(["ffmpeg", "-y", "-v", "error"] + vcmd +

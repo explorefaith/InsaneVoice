@@ -1265,6 +1265,10 @@ export async function cartoon(page, seq, fresh) {
       <div class="row wrap" style="margin-top:var(--s2);gap:8px" id="ct-mode">
         <button class="chip ok" data-mode="motion">✦ Motion cartoon — animated scenes, frame-by-frame</button>
         <button class="chip" data-mode="storybook">▢ Storybook — illustrated stills</button>
+        <span style="width:12px"></span>
+        <button class="chip ok" data-lang="en">🌐 English</button>
+        <button class="chip" data-lang="hi">हिंदी</button>
+        <button class="chip" data-lang="bn">বাংলা</button>
       </div>
       <div class="row wrap" style="margin-top:var(--s2);align-items:center">
         <button class="btn accent" id="ct-go" ${(!configured || (quota && quota.remaining <= 0 && !active)) ? "disabled" : ""}>
@@ -1280,10 +1284,12 @@ export async function cartoon(page, seq, fresh) {
       <div id="ct-lib" class="small muted">Loading…</div>
     </div>
   `);
-  let ctMode = "motion";
+  let ctMode = "motion", ctLang = "en";
   page.querySelectorAll("#ct-mode .chip").forEach((ch) => ch.addEventListener("click", () => {
-    ctMode = ch.dataset.mode;
-    page.querySelectorAll("#ct-mode .chip").forEach((c) => c.classList.toggle("ok", c === ch));
+    if (ch.dataset.mode) ctMode = ch.dataset.mode;
+    if (ch.dataset.lang) ctLang = ch.dataset.lang;
+    const group = ch.dataset.mode ? "mode" : "lang";
+    page.querySelectorAll(`#ct-mode .chip[data-${group}]`).forEach((c) => c.classList.toggle("ok", c === ch));
   }));
 
   const setProgress = (pct, label) => {
@@ -1353,7 +1359,7 @@ export async function cartoon(page, seq, fresh) {
       const r = await cApi("/api/cartoon", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea, mode: ctMode }),
+        body: JSON.stringify({ idea, mode: ctMode, lang: ctLang }),
       });
       toast("Cartoon started", "Script → scenes → narration → render. Takes a few minutes.", "ok");
       listen(r.job);
