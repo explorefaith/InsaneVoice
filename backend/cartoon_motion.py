@@ -47,6 +47,8 @@ PROPS (place 3-6 for a rich scene): tree, pine, bush, flower, river, pond, house
   streetlamp, tent, butterfly (flies), bee (flies), fish (swims)
 GROUND: grass | sand | wood | floor | stone | snow
 TIME: day | sunset | night
+Each actor gets "role": "main" (the premise character) or "second" (side character).
+  Speak windows are computed automatically from the dialogue — do NOT invent them.
 ACTOR ACTIONS (t = [startSec, endSec] within [0, duration]):
   {{"do":"walk","to":<x>,"t":[a,b]}}          — walks across, legs animate, auto-faces
   {{"do":"gesture","name":"...","t":[a,b]}}   — wave, point, cheer, think, carry, nod, shake, bow, dance, spin, sit
@@ -127,7 +129,7 @@ def _validate_choreo(data: dict, duration: float) -> dict:
             props.append(p)
     data["props"] = props
     actors = []
-    for a in (data.get("actors") or [])[:3]:
+    for idx, a in enumerate((data.get("actors") or [])[:3]):
         if not isinstance(a, dict) or a.get("type") not in ACTORS:
             continue
         acts = []
@@ -147,6 +149,7 @@ def _validate_choreo(data: dict, duration: float) -> dict:
         a["actions"] = acts
         a["x"] = max(120, min(1800, a.get("x", 400) or 400))
         a["scale"] = max(0.35, min(1.3, a.get("scale", 1) or 1))
+        a["role"] = a.get("role") if a.get("role") in ("main", "second") else             ("main" if idx == 0 else "second")
         actors.append(a)
     if not actors:
         raise ValueError("no valid actors after validation")
@@ -160,7 +163,8 @@ def assemble_scene_html(choreo: dict, duration: float, speak_from: float,
     payload = json.dumps(choreo, ensure_ascii=False)
     if "</script" in payload.lower():
         payload = payload.replace("</script", "<\\/script")
-    mouth = json.dumps([round(float(v), 3) for v in (mouth_env or [])])
+    env = [round(float(v), 3) for v in (mouth_env or [])]
+    mouth = json.dumps(env)
     html = f"""<!doctype html><html><head><meta charset="utf-8">
 <style>html,body{{margin:0;padding:0;width:{WIDTH}px;height:{HEIGHT}px;overflow:hidden;background:#0e1440}}#stage{{position:absolute;inset:0}}</style>
 </head><body><div id="stage"></div>
@@ -168,6 +172,8 @@ def assemble_scene_html(choreo: dict, duration: float, speak_from: float,
 <script>
 window.__SCENE = {payload};
 window.__MOUTH = {mouth};
+window.__MOUTHDUR = {len(env) / FPS:.3f};
+window.__LEAD = 0.4;
 window.IVScene.build(window.__SCENE, {duration}, {speak_from}, {speak_to});
 </script></body></html>"""
     out_html.write_text(html)

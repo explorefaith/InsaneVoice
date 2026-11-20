@@ -16,7 +16,10 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+import asyncio
+import uuid as _uuid
+
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -1012,6 +1015,60 @@ def cartoon_reroll(jid: str, req: dict):
         return _ok({"reroll": r})
     except (RuntimeError, ValueError) as e:
         return _err(str(e), 400)
+
+
+@app.websocket("/ws/cartoon/{jid}")
+async def ws_cartoon(ws: WebSocket, jid: str):
+    """Live job progress over WebSocket (falls back to polling on the client)."""
+    await ws.accept()
+    try:
+        while True:
+            job = cartoon.get_job(jid)
+            await ws.send_json({"ok": True, "job": job, "stills": cartoon.job_stills(jid)})
+            if not job or job.get("status") in ("done", "error"):
+                break
+            await asyncio.sleep(1.2)
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    except Exception:                   # noqa: BLE001
+        pass
+    try:
+        await ws.close()
+    except Exception:                   # noqa: BLE001
+        pass
+
+
+@app.post("/api/voices/mix")
+async def voices_mix(req: dict):
+    """Blend two cloned voices into a new one (speaker-embedding interpolation)."""
+    a = storage.get_voice((req or {}).get("a", ""))
+    b = storage.get_voice((req or {}).get("b", ""))
+    if not a or not b:
+        return _err("pick two existing voices", 400)
+    if a["id"] == b["id"]:
+        return _err("pick two different voices", 400)
+    ratio = max(0.0, min(1.0, float((req or {}).get("ratio", 0.5))))
+    name = ((req or {}).get("name") or f"{a['name']} × {b['name']}")[:60]
+    try:
+        import torch
+        ta = torch.load(a["se_path"], map_location="cpu")
+        tb = torch.load(b["se_path"], map_location="cpu")
+        mixed = ta * (1 - ratio) + tb * ratio
+        vid = f"ref_{_uuid.uuid4().hex[:10]}"
+        se_path = str(config.VOICES_DIR / f"{vid}.pth")
+        torch.save(mixed, se_path)
+        profile = {
+            "id": vid, "name": name,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "sample": a.get("sample", ""), "sample_url": a.get("sample_url", ""),
+            "se_path": se_path, "duration": a.get("duration"), "consent": True,
+            "notes": f"Mix of {a['name']} × {b['name']} @ {ratio:.0%}",
+            "mix": {"a": a["id"], "b": b["id"], "ratio": ratio},
+        }
+        storage.add_voice(profile)
+        return _ok({"voice": profile}, 201)
+    except Exception as e:              # noqa: BLE001
+        return _err(f"mix failed: {e}", 500)
 
 
 @app.post("/api/cartoon/{jid}/export")

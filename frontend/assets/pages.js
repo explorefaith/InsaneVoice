@@ -7,6 +7,7 @@ import {
 } from "./components.js";
 import { icon } from "./icons.js";
 import { apiBase, setApiBase } from "./net.js";
+import { t } from "./i18n.js";
 import { inlinePlay } from "./components.js";
 
 /* ============================================================
@@ -509,19 +510,19 @@ export async function dashboard(page, seq, fresh) {
   page.innerHTML = pageShell(`
     <div class="hero">
       <div class="hero-copy">
-        <div class="eyebrow">InsaneVoice · <b>local</b> cloning studio</div>
+        <div class="eyebrow">${t("dash_eyebrow") || "InsaneVoice · <b>local</b> cloning studio"}</div>
         <h1 class="hero-title">${greet}.</h1>
-        <p class="hero-sub">Your voices, ready to speak — everything runs on this machine, offline and free.</p>
+        <p class="hero-sub">${t("dash_sub") || "Your voices, ready to speak — everything runs on this machine, offline and free."}</p>
         <div class="row wrap" style="gap:10px;margin-top:var(--s3)">
-          <a class="btn accent" href="#/studio">${icon("type", 15)} Open Studio</a>
-          <a class="btn" href="#/cartoon">${icon("video", 15)} Make a cartoon</a>
-          <a class="btn" href="#/recorder">${icon("record", 15)} Clone a voice</a>
+          <a class="btn accent" href="#/studio">${icon("type", 15)} ${t("btn_studio") || "Open Studio"}</a>
+          <a class="btn" href="#/cartoon">${icon("video", 15)} ${t("btn_cartoon") || "Make a cartoon"}</a>
+          <a class="btn" href="#/recorder">${icon("record", 15)} ${t("btn_clone") || "Clone a voice"}</a>
         </div>
         <div class="hero-stats">
-          <div class="stat"><div class="n">${voices}</div><div class="l">Voices in library</div></div>
-          <div class="stat"><div class="n" id="d-gen">…</div><div class="l">Generations</div></div>
-          <div class="stat"><div class="n">${minutes}<small> min</small></div><div class="l">Audio rendered</div></div>
-          <div class="stat"><div class="n ${engClass}" id="d-eng">${engText}</div><div class="l">Engine · CPU</div></div>
+          <div class="stat"><div class="n">${voices}</div><div class="l">${t("stat_voices") || "Voices in library"}</div></div>
+          <div class="stat"><div class="n" id="d-gen">…</div><div class="l">${t("stat_gens") || "Generations"}</div></div>
+          <div class="stat"><div class="n">${minutes}<small> min</small></div><div class="l">${t("stat_audio") || "Audio rendered"}</div></div>
+          <div class="stat"><div class="n ${engClass}" id="d-eng">${engText}</div><div class="l">${t("stat_engine") || "Engine · CPU"}</div></div>
         </div>
       </div>
       <div class="orb-wrap"><canvas class="orb" aria-hidden="true"></canvas></div>
@@ -532,16 +533,16 @@ export async function dashboard(page, seq, fresh) {
 
     <section class="dash-section">
       <div class="spread" style="align-items:flex-end">
-        <h2 class="dash-h2" style="margin:0">Your demos. <span class="lp-dim">Fresh renders from this machine.</span></h2>
-        <a class="btn sm" href="#/history">All history ${icon("arrow", 13)}</a>
+        <h2 class="dash-h2" style="margin:0">${t("demos_h") || "Your demos."} <span class="lp-dim">${t("demos_sub") || "Fresh renders from this machine."}</span></h2>
+        <a class="btn sm" href="#/history">${t("all_history") || "All history"} ${icon("arrow", 13)}</a>
       </div>
       <div class="dash-clips" id="d-clips"></div>
     </section>
 
     <section class="dash-section">
       <div class="spread" style="align-items:flex-end">
-        <h2 class="dash-h2" style="margin:0">Your voices. <span class="lp-dim">${voices} cloned and ready.</span></h2>
-        <a class="btn sm" href="#/library">Open library ${icon("arrow", 13)}</a>
+        <h2 class="dash-h2" style="margin:0">${t("voices_h") || "Your voices."} <span class="lp-dim">${voices} ${t("voices_sub") || "cloned and ready."}</span></h2>
+        <a class="btn sm" href="#/library">${t("open_library") || "Open library"} ${icon("arrow", 13)}</a>
       </div>
       <div class="dash-voices" id="d-voices"></div>
     </section>
@@ -561,9 +562,9 @@ export async function dashboard(page, seq, fresh) {
     clips.innerHTML = `
       <div class="empty">
         <div class="e-ico">${icon("waveform", 34)}</div>
-        <h3>Nothing rendered yet</h3>
-        <p>Pick a voice, type a line — your first demo will live here.</p>
-        <a class="btn sm accent" href="#/studio" style="margin-top:6px">${icon("type", 13)} Type your first words</a>
+        <h3>${t("empty_demos_h") || "Nothing rendered yet"}</h3>
+        <p>${t("empty_demos_p") || "Pick a voice, type a line — your first demo will live here."}</p>
+        <a class="btn sm accent" href="#/studio" style="margin-top:6px">${icon("type", 13)} ${t("btn_first_words") || "Type your first words"}</a>
       </div>`;
   } else {
     clips.innerHTML = demos.map((h) => `
@@ -588,8 +589,8 @@ export async function dashboard(page, seq, fresh) {
   const strip = page.querySelector("#d-voices");
   if (!recentVoices.length) {
     strip.innerHTML = `<div class="empty"><div class="e-ico">${icon("stack", 34)}</div>
-      <h3>No voices yet</h3><p>Record 10 seconds of yourself — that's all a clone needs.</p>
-      <a class="btn sm accent" href="#/recorder" style="margin-top:6px">${icon("record", 13)} Clone your voice</a></div>`;
+      <h3>${t("empty_voices_h") || "No voices yet"}</h3><p>${t("empty_voices_p") || "Record 10 seconds of yourself — that's all a clone needs."}</p>
+      <a class="btn sm accent" href="#/recorder" style="margin-top:6px">${icon("record", 13)} ${t("btn_clone_voice") || "Clone your voice"}</a></div>`;
   } else {
     strip.innerHTML = recentVoices.map((v) => `
       <div class="dv-chip" title="${esc(v.name)}">

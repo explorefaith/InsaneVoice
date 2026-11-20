@@ -5,6 +5,7 @@ import { icon } from "./icons.js";
 import * as pages from "./pages.js";
 import * as pages2 from "./pages2.js";
 import { abs, apiBase, setApiBase } from "./net.js";
+import { t, lang, toggle as langToggle } from "./i18n.js";
 
 /* ---------- api ---------- */
 
@@ -130,17 +131,35 @@ function buildNav() {
     agent: "bolt", connections: "nodes", history: "clock", settings: "sliders",
     help: "help", dubhub: "globe", gallery: "grid", admin: "doc",
   };
+  const T = (k, fb) => t(k) || fb;
+  const GROUPS = { Overview: "nav_overview", Create: "nav_create", Voices: "nav_voices",
+                   Tools: "nav_tools", System: "nav_system" };
+  const TITLES = {
+    dashboard: "title_dashboard", gallery: "title_gallery", studio: "title_studio",
+    director: "title_director", batch: "title_batch", cartoon: "title_cartoon",
+    agent: "title_agent", dna: "title_dna", recorder: "title_recorder",
+    library: "title_library", design: "title_design", changer: "title_changer",
+    isolate: "title_isolate", transcribe: "title_transcribe", dubbing: "title_dubbing",
+    dubhub: "title_dubhub", connections: "title_connections", admin: "title_admin",
+    history: "title_history", settings: "title_settings", help: "title_help",
+  };
   nav.innerHTML = groups.map((g) => `
-    <div class="group">${esc(g.name)}</div>
+    <div class="group">${esc(T(GROUPS[g.name], g.name))}</div>
     ${g.items.map(([id, title]) => `
-      <button data-route="${id}" title="${esc(title)}">
+      <button data-route="${id}" title="${esc(T(TITLES[id], title))}">
         <span class="ico">${icon(NAV_ICONS[id] || "grid", 17)}</span>
-        <span class="grow">${esc(title)}</span>
+        <span class="grow">${esc(T(TITLES[id], title))}</span>
         <span class="badge" data-badge="${id}" hidden></span>
-      </button>`).join("")}`).join("");
-  nav.querySelectorAll("button").forEach((b) => {
+      </button>`).join("")}`).join("")
+    + `<div class="group">·</div>
+       <button id="lang-toggle" title="Language / ভাষা">
+         <span class="ico">🌐</span><span class="grow">${lang() === "bn" ? "English" : "বাংলা"}</span>
+       </button>`;
+  nav.querySelectorAll("button[data-route]").forEach((b) => {
     b.addEventListener("click", () => location.hash = `#/${b.dataset.route}`);
   });
+  const lt = document.getElementById("lang-toggle");
+  if (lt) lt.addEventListener("click", langToggle);
 }
 
 function updateNavBadges() {

@@ -327,7 +327,7 @@ def _stage_premise(job: dict, p: dict, d: Path) -> dict:
     prompt = f"""{task}
 
 Return STRICT JSON only, no markdown fences:
-{{"title": "...", "character": "one-sentence physical description of the main character for an artist — shape, colors, one distinguishing feature", "logline": "one sentence: what happens", "mood": "one of: cozy, playful, dreamy, adventurous, funny"}}"""
+{{"title": "...", "character": "one-sentence physical description of the main character for an artist — shape, colors, one distinguishing feature", "second_character": "one-sentence description of a side character in the story (or empty string if none)", "logline": "one sentence: what happens", "mood": "one of: cozy, playful, dreamy, adventurous, funny"}}"""
     last_err = None
     for model in p["text"]["models"]:
         try:
@@ -341,6 +341,7 @@ Return STRICT JSON only, no markdown fences:
             data = json.loads(txt[txt.index("{"): txt.rindex("}") + 1])
             assert data.get("title") and data.get("character") and data.get("logline")
             data.setdefault("mood", "cozy")
+            data.setdefault("second_character", "")
             f.write_text(json.dumps(data, indent=1))
             print(f"[cartoon] premise: {data['title']} — {data['logline']}", flush=True)
             return data
@@ -373,7 +374,8 @@ Return STRICT JSON only, no markdown fences, exactly this shape:
 
 Rules:
 - Exactly 9 items. Items 1-8 are story scenes; item 9 is the closing card (narration one short warm goodnight/goodbye line, visual: cozy "the end" style card of the main character resting/safe, caption empty string "").
-- Total narration 135-150 words (~60 seconds at a calm storytelling pace), split across scenes (roughly 15-20 words each, closing card 3-6 words).
+- Total narration 120-140 words (~50 seconds), split across scenes (roughly 12-18 words each, closing card 3-6 words).
+- EACH scene may include "dialogue": [{{"who": "main", "line": "..."}}, {{"who": "second", "line": "..."}}] — short spoken lines (max 12 words each, max 2 lines per scene) said by the characters on screen. "main" = the premise character, "second" = the side character (only if the story has one). Give dialogue to at least 4 scenes; when a scene has dialogue keep its narration to max 15 words. Write dialogue in the story language too.
 - "visual": a detailed scene description. Mention the main character's ACTION + what else is in frame + mood. Every scene must feature the main character. Do NOT include art-style words (style is added separately).
 - "caption": max 5 words, shown as on-screen text. For the last card use ""."""
     payload = {"messages": [{"role": "user", "content": prompt}],
@@ -477,45 +479,117 @@ def _stage_images(job: dict, p: dict, d: Path, script: dict) -> None:
 
 # ---------- stage 3: narration ----------
 
+def _tts_one(text: str, lang: str, out: Path, p: dict, cloud: "list") -> None:
+    """Render one spoken line — cloud Fish TTS first, offline MMS fallback."""
+    if not cloud[0]:
+        _mms_tts(text, lang, out)
+        return
+    req = urllib.request.Request(f"{p['tts']['base_url']}/audio/speech",
+        data=json.dumps({"model": p["tts"]["model"], "input": text,
+                         "response_format": "mp3"}).encode(),
+        headers={"Authorization": f"Bearer {p['tts']['api_key']}",
+                 "Content-Type": "application/json"})
+    def _tts():
+        with urllib.request.urlopen(req, timeout=120) as r:
+            out.write_bytes(r.read())
+    try:
+        _retry(_tts, tries=3, wait=4)
+    except Exception as e:              # noqa: BLE001 — offline fallback
+        if "429" not in str(e):
+            raise
+        cloud[0] = False
+        print("[cartoon] tts: cloud daily cap hit — local MMS for the rest of this job",
+              flush=True)
+        _mms_tts(text, lang, out)
+
+
+def _pitch(mp3: Path, factor: float) -> None:
+    """Give a character its own voice by pitch-shifting (keeps duration)."""
+    if abs(factor - 1.0) < 1e-3:
+        return
+    tmp = mp3.with_suffix(".tmp.mp3")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(mp3),
+                    "-af", f"asetrate=44100*{factor},aresample=44100,atempo={1 / factor:.5f}",
+                    "-ar", "44100", "-ac", "1", "-b:a", "128k", str(tmp)], check=True)
+    tmp.replace(mp3)
+
+
 def _stage_tts(job: dict, p: dict, d: Path, script: dict) -> dict:
     durs = {}
-    n = sum(1 for sc in script["scenes"] if sc.get("narration"))
+    speech = {}
+    n = sum(1 for sc in script["scenes"] if sc.get("narration") or sc.get("dialogue"))
     done = 0
     lang = (job.get("lang") or "en").lower()
-    cloud_dead = False          # once the daily cap is hit, stop wasting retries
+    cloud = [True]              # once the daily cap is hit, stop wasting retries
+    try:
+        premise = json.loads((d / "premise.json").read_text())
+        sec_desc = (premise.get("second_character") or "").lower()
+    except Exception:               # noqa: BLE001
+        sec_desc = ""
+    sec_pitch = 0.85 if any(k in sec_desc for k in
+                            ("old", "giant", "monster", "bear", "wolf", "lion",
+                             "elephant", "grumpy", "deep")) else 1.18
     for i, sc in enumerate(script["scenes"], 1):
-        if not sc.get("narration"):
+        if not (sc.get("narration") or sc.get("dialogue")):
             continue
         _update(job["id"], stage="narration", progress=0.52 + 0.13 * done / n,
-                message=f"Recording narration {done+1} of {n}…")
+                message=f"Recording voices {done+1} of {n}…")
         mp3 = d / f"narr{i}.mp3"
+        segs = None
         if not mp3.exists():
-            used_cloud = False
-            if not cloud_dead:
-                try:
-                    req = urllib.request.Request(f"{p['tts']['base_url']}/audio/speech",
-                        data=json.dumps({"model": p["tts"]["model"],
-                                         "input": sc["narration"],
-                                         "response_format": "mp3"}).encode(),
-                        headers={"Authorization": f"Bearer {p['tts']['api_key']}",
-                                 "Content-Type": "application/json"})
-                    def _tts():
-                        with urllib.request.urlopen(req, timeout=120) as r:
-                            mp3.write_bytes(r.read())
-                    _retry(_tts, tries=3, wait=4)
-                    used_cloud = True
-                except Exception as e:      # noqa: BLE001 — offline fallback
-                    if "429" not in str(e):
-                        raise
-                    cloud_dead = True       # daily cap — straight to MMS from now on
-                    print(f"[cartoon] tts {i}: cloud daily cap hit — local MMS for the "
-                          f"rest of this job", flush=True)
-            if not used_cloud:
-                print(f"[cartoon] tts {i}: local MMS narration", flush=True)
-                _mms_tts(sc["narration"], lang, mp3)
+            segs = []               # (file, who, gap_after, dur)
+            if sc.get("narration"):
+                na = d / f"narr{i}_0.mp3"
+                _tts_one(sc["narration"], lang, na, p, cloud)
+                segs.append([na, "main", 0.6, _probe(na)])
+            for j, dl in enumerate(sc.get("dialogue") or [], 1):
+                df = d / f"narr{i}_d{j}.mp3"
+                _tts_one(dl["line"], lang, df, p, cloud)
+                pitch = 1.06 if dl["who"] == "main" else sec_pitch
+                _pitch(df, pitch)
+                segs.append([df, dl["who"], 0.45, _probe(df)])
+            # concat with gaps -> single scene audio
+            if len(segs) == 1:
+                segs[0][0].replace(mp3)
+            else:
+                inputs, total_in = [], []
+                for k, (f, _, _, _) in enumerate(segs):
+                    inputs += ["-i", str(f)]
+                    total_in.append(f"[{k}:a]")
+                for k, (_, _, gap, _) in enumerate(segs[:-1]):
+                    sil = d / f"sil{i}_{k}.mp3"
+                    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi",
+                                    "-i", "anullsrc=r=44100:cl=mono", "-t", str(gap),
+                                    "-b:a", "128k", str(sil)], check=True)
+                    inputs += ["-i", str(sil)]
+                    total_in.append(f"[{len(segs) + k}:a]")
+                order = []
+                for k in range(len(segs)):
+                    order.append(total_in[k])
+                    if k < len(segs) - 1:
+                        order.append(total_in[len(segs) + k])
+                fc = "".join(order) + f"concat=n={len(order)}:v=0:a=1[a]"
+                subprocess.run(["ffmpeg", "-y", "-v", "error"] + inputs +
+                               ["-filter_complex", fc, "-map", "[a]",
+                                "-b:a", "128k", str(mp3)], check=True)
+                for f, _, _, _ in segs:
+                    f.unlink(missing_ok=True)
+        # speech map for lip-sync windows (durations captured before cleanup)
+        if segs:
+            t, lines = 0.0, []
+            for f, who, gap, dur in segs:
+                lines.append({"who": who, "t0": round(t, 3), "dur": round(dur, 3)})
+                t += dur + gap
+        else:
+            lines = [{"who": "main", "t0": 0.0, "dur": durs_prev or _probe(mp3)}]
         durs[f"n{i}"] = _probe(mp3)
+        if not segs:
+            lines = [{"who": "main", "t0": 0.0, "dur": durs[f"n{i}"]}]
+        speech[str(i)] = {"lines": lines}
         done += 1
         time.sleep(1)
+    (d / "speech.json").write_text(json.dumps(speech, indent=1))
+    (d / "durations.json").write_text(json.dumps(durs, indent=1))
     return durs
 
 
@@ -527,7 +601,7 @@ def _mms_tts(text: str, lang: str, out_path: Path) -> None:
         raise RuntimeError(f"cloud TTS rate-limited and no offline voice for '{lang}'")
     engine.mms_generate(text, iso, str(out_path) + ".wav", speed=1.10)
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(out_path) + ".wav",
-                    "-b:a", "128k", str(out_path)], check=True)
+                    "-ar", "44100", "-ac", "1", "-b:a", "128k", str(out_path)], check=True)
     Path(str(out_path) + ".wav").unlink(missing_ok=True)
 
 
@@ -588,8 +662,28 @@ def _stage_motion(job: dict, p: dict, d: Path, script: dict, durs: dict) -> None
                 env = cmotion.mouth_envelope(d / f"narr{i}.mp3", lens[i])
             except Exception:               # noqa: BLE001 — sine-cycle fallback
                 pass
+            # per-character speak windows from the dialogue speech map
+            wmap = {"main": [list(spk)], "second": []}
+            try:
+                sp = json.loads((d / "speech.json").read_text()).get(str(i)) or []
+                wm, ws_ = [], []
+                for ln in sp:
+                    a = 0.4 + ln["t0"] * 1.10
+                    b = 0.4 + (ln["t0"] + ln["dur"]) * 1.10
+                    (ws_ if ln.get("who") == "second" else wm).append([round(a, 2), round(b, 2)])
+                if wm:
+                    wmap["main"] = wm
+                wmap["second"] = ws_
+            except Exception:               # noqa: BLE001
+                pass
 
             def _finish(ch):
+                for a in ch.get("actors", []):
+                    a.setdefault("role", "main")
+                    w = wmap.get(a.get("role", "main"))
+                    if w:
+                        a["speakWindows"] = w
+                    a.pop("speaker", None)
                 (d / f"choreo{i}.json").write_text(json.dumps(ch, indent=1))
                 cmotion.assemble_scene_html(ch, lens[i], spk[0], spk[1], html_path, env)
                 mr.validate(html_path, lens[i])

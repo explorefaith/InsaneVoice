@@ -735,6 +735,7 @@ window.IVScene = (function () {
         x: a.x == null ? 400 + idx * 200 : a.x,
         flip: !!a.flip,
         speaker: !!a.speaker,
+        spk: (a.speakWindows || []).map(w => [Number(w[0]) || 0, Number(w[1]) || 0]),
         emote: a.emote || (timeOfDay === "night" ? "neutral" : "happy"),
         walks: [],
         jumps: [],
@@ -845,18 +846,21 @@ window.IVScene = (function () {
       } else if (!walking) {
         S.armL(4 + breathe); S.armR(-4 - breathe); S.lean(0); S.head(0);
       }
-      // talk lip-sync — driven by the real narration envelope when available
-      const speaking = A.speaker && t >= spFrom && t <= spTo;
+      // talk lip-sync — per-character windows + real narration envelope
+      const win = A.spk && A.spk.length ? A.spk : (A.speaker ? [[spFrom, spTo]] : []);
+      const speaking = win.some(w => t >= w[0] && t <= w[1]);
       if (speaking) {
         let open;
-        const M = window.__MOUTH;
+        const M = window.__MOUTH, LEAD = window.__LEAD || 0.4;
+        const MD = window.__MOUTHDUR || Math.max(0.01, spTo - spFrom);
         if (M && M.length) {
-          const i = Math.max(0, Math.min(M.length - 1, Math.round((t - spFrom) * (M.length / Math.max(0.01, spTo - spFrom)))));
+          const i = Math.max(0, Math.min(M.length - 1, Math.round((t - LEAD) * (M.length / MD))));
           open = 0.1 + 0.9 * (M[i] || 0);
         } else {
           open = 0.25 + 0.75 * Math.abs(Math.sin(t * TAU * 4.2 + Math.sin(t * 6.7) * 0.8));
         }
-        const env = Math.min(1, (t - spFrom) / 0.35) * Math.min(1, (spTo - t) / 0.35);
+        const w = win.find(w2 => t >= w2[0] && t <= w2[1]) || [t, t];
+        const env = Math.min(1, (t - w[0]) / 0.3) * Math.min(1, (w[1] - t) / 0.3);
         S.mouth(open * env, 0);
         if (r.kind === "human") S.head(Math.sin(t * TAU * 1.1) * 3.5);
       } else {
