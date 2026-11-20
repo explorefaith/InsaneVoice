@@ -1,78 +1,173 @@
-"""Cartoon motion engine — LLM-written HTML scenes rendered frame-by-frame.
+"""Cartoon motion engine — rigged-character scenes rendered frame-by-frame.
 
-Each scene becomes a self-contained HTML/CSS/SVG animation with a strict
-contract: the page must define `window.render(tSeconds)` that deterministically
-positions every element for time t. A headless Chrome (system binary via
-Playwright) screenshots the page at 12 fps (classic cartoon frame rate) and
-ffmpeg turns frames + narration into the final clip.
+Instead of asking the LLM to draw (error-prone), the LLM writes a compact
+CHOREOGRAPHY JSON: pick ready-made characters/props from the rig library
+(humans, animals, trees, rivers, houses, weather...), place them, and time
+their gestures. `backend/assets/cartoon_rig.js` does all drawing/animation
+deterministically — real walk cycles, extreme gestures, and automatic
+lip-sync during the narration window. Headless Chrome captures 15fps frames.
 
-If a scene's HTML fails validation twice, the caller falls back to the
-static-image pipeline for that scene.
+Fallback per scene: Recraft image (storybook-style) if choreography fails.
 """
 from __future__ import annotations
 
 import json
-import re
 import time
 import urllib.error
 from pathlib import Path
 
-CHROME = "/usr/bin/google-chrome"
+RIG_JS_PATH = Path(__file__).resolve().parent / "assets" / "cartoon_rig.js"
 FPS = 15
 WIDTH, HEIGHT = 1920, 1080
 
-PROMPT_TEMPLATE = """You are an animation director making a real animated short. Write ONE self-contained HTML file that renders a single 2D cartoon scene as a programmatic animation — it must feel like a frame from an animated film, not a slideshow.
+ACTORS = ["man", "woman", "boy", "girl", "oldman", "cat", "dog", "bird"]
+PROPS = ["tree", "pine", "bush", "flower", "river", "pond", "house", "fence", "bench", "rock",
+         "table", "chair", "bookshelf", "sun", "moon", "clouds", "stars", "rain", "snow",
+         "fireflies", "mountains", "hills", "road", "butterfly", "bee", "fish"]
+GROUNDS = ["grass", "sand", "wood", "floor", "stone", "snow"]
+TIMES = ["day", "sunset", "night"]
+GESTURES = ["wave", "point", "cheer", "think", "carry", "nod", "shake", "bow", "dance", "spin", "jump", "sit"]
+EMOTES = ["happy", "sad", "surprised", "angry", "neutral"]
 
-Scene. Duration: {duration:.1f} seconds. Mood: {mood}.
-Scene description: {visual}
-Main character (keep EXACTLY consistent): {character}
-
-STRICT TECHNICAL CONTRACT (violations fail automatically):
-1. One file: <!doctype html> ... </html>. All CSS/JS inline. NO external resources, no fonts, no images, no network.
-2. A fixed stage exactly {width}x{height} px (body margin 0, stage div absolute, overflow hidden). ALL scene content lives inside one wrapper <div id="camera">.
-3. MUST define: window.render = function(t) {{ ... }} — t is seconds since scene start (0..{duration:.1f}). It must deterministically set positions/rotations/opacity/scale of every animated element for that instant (pure interpolation, no randomness, no setInterval, no CSS animations/transitions).
-4. Before first render, page must already look complete at t=0 without render() being called (initial CSS state = frame 0).
-5. Flat 2D vector-cartoon look: inline SVG shapes, cohesive {mood} palette, clean silhouettes. NO text, NO letters, NO speech bubbles anywhere.
-6. EXTREME THEATRICAL GESTURES — classic full-animation cartoon energy, never subtle:
-   - BIG AMPLITUDE: elements routinely travel 300-800px across the stage; jumps lift the character 200-400px off the ground; rotations swing 15-40 degrees; scale pulses 1.0 -> 1.35 (squash on landing, stretch on launch).
-   - ACTION PROGRESSION: the character crosses the ENTIRE screen at least once (walk/run cycle with body bob and leg swings), grabs/throws/chases a prop, and does at least one dramatic reaction — a double-take jump, a wild spin, a startled leap, or a triumphant flourish.
-   - ANTICIPATION + FOLLOW-THROUGH: every big move gets a wind-up (pull back 30-60px for 0.2-0.3s) then a fast eased strike (0.3-0.5s) that overshoots slightly and settles. This rhythm is mandatory.
-   - PACING: fast action bursts separated by short 0.5-1s beats — lively, never sluggish, never static for more than 1 second.
-   - At least 6 distinct movement moments; the scene must END in a drastically different state than it started.
-   Use eased interpolation: t01 = Math.min(1, Math.max(0, (t - a) / (b - a))); e = t01*t01*(3-2*t01); overshoot = 1 + 0.15*Math.sin(Math.min(1,t01)*Math.PI).
-7. {speak_line}
-8. CAMERA: render(t) must ALSO animate #camera — a cinematic push-in (scale 1.0 -> 1.15) or a sweeping pan (up to 130px), and it may snap tighter during the biggest action moment. Every scene has camera motion.
-9. Secondary life: 2-4 background elements also move (clouds drift, stars twinkle, leaves sway, steam puffs, particles float).
-10. Everything stays inside the stage.
-11. Keep it compact — under 240 lines.
-
-Return ONLY the HTML file content (no explanations, no markdown fences)."""
-
-MAX_TOKENS = 8000
+CATALOG = f"""ACTORS (rigged, they walk/gesture/lip-sync automatically):
+  man, woman, boy, girl, oldman, cat, dog, bird
+  human params: skin ("#f6c99f" fair | "#e0ac69" tan | "#a9714b" brown | "#6b4429" dark),
+    hair "#hex", hairstyle ("short"|"long"|"bun"|"curly"|"bald"), shirt "#hex", pants "#hex",
+    glasses true/false, hat true/false. oldman = elderly. boy/girl render as children.
+PROPS (place 3-6 for a rich scene): tree, pine, bush, flower, river, pond, house, fence,
+  bench, rock, table, chair, bookshelf, sun, moon, clouds, stars, rain, snow, fireflies,
+  mountains, hills, road, butterfly (flies on its own), bee (flies), fish (swims)
+GROUND: grass | sand | wood | floor | stone | snow
+TIME: day | sunset | night
+ACTOR ACTIONS (t = [startSec, endSec] within [0, duration]):
+  {{"do":"walk","to":<x>,"t":[a,b]}}          — walks across, legs animate, auto-faces
+  {{"do":"gesture","name":"...","t":[a,b]}}   — wave, point, cheer, think, carry, nod, shake, bow, dance, spin, sit
+  {{"do":"jump","t":[a,b]}}                    — big leap with squash & stretch
+  {{"do":"face","dir":-1,"t":[a,a]}}           — turn around at that moment
+  {{"do":"emote","name":"happy|sad|surprised|angry","t":[a,a]}}"""
 
 
-def _extract_html(txt: str) -> str:
-    lo = txt.lower()
-    start = lo.find("<!doctype")
-    if start < 0:
-        start = lo.find("<html")
-    if start < 0:
-        raise ValueError("no html document in response")
-    end = lo.rfind("</html>")
-    body = txt[start: end + 7] if end >= 0 else txt[start:]
-    if end < 0:
-        body += "\n</body></html>"      # tolerate truncated output
-    return body
+def _rig_js() -> str:
+    return RIG_JS_PATH.read_text()
+
+
+def request_choreo(text_cfg: dict, scene: dict, duration: float, character: str,
+                   speak=None, mood: str = "cozy") -> dict:
+    """LLM step (no browser) — returns validated choreography dict."""
+    sp = (f'The main character SPEAKS from t={speak[0]:.1f} to t={speak[1]:.1f} — set '
+          f'"speaker": true on that actor and give it talking gestures in that window.')
+    prompt = f"""You are a cartoon animation director. Output STRICT JSON only (no markdown, no comments) describing ONE scene of an animated 2.5D cartoon.
+
+Duration: {duration:.1f} seconds. Mood: {mood}.
+Story beat to show: {scene['visual']}
+Main character: {character} — choose the ACTOR type + params that match it best, keep it consistent.
+{sp}
+
+CATALOG
+{CATALOG}
+
+RULES
+- Output shape: {{"time": "...", "ground": "...", "camera": {{"start": {{"x":0,"y":0,"zoom":1.0}}, "end": {{"x":80,"y":-30,"zoom":1.12}}}}, "props": [...], "actors": [...]}}
+- "props": 3-6 entries, each {{"type":"...","x":0-1900,"y":groundY-ish,"scale":0.5-1.6}} (y optional, default ground). Sun/moon/stars/clouds high on screen (y 100-260). river spans screen (x 0, y near groundY).
+- "actors": 1-3 entries, each {{"type":"...","params":{{...}},"x":200-1700,"scale":0.8-1.1,"flip":false,"speaker":true/false,"emote":"happy","actions":[...]}}
+- 3-5 actions per actor covering the WHOLE duration; big theatrical energy: cross the screen, wave, jump, dance, react. The speaker gestures actively during its speech window.
+- camera: slow push-in or pan (zoom 1.0 -> 1.1-1.15).
+- All t values are seconds within [0, {duration:.1f}]. JSON only."""
+    last_err = None
+    for model in text_cfg["models"]:
+        try:
+            from cartoon import _post_json
+            r = _post_json(f"{text_cfg['base_url']}/chat/completions",
+                           text_cfg["api_key"], {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.6, "max_tokens": 3500}, timeout=240)
+            txt = r["choices"][0]["message"]["content"].strip()
+            txt = txt.split("```json")[-1].split("```")[0].strip()
+            data = json.loads(txt[txt.index("{"): txt.rindex("}") + 1])
+            return _validate_choreo(data, duration)
+        except urllib.error.HTTPError as e:
+            last_err = f"{model}: HTTP {e.code}"
+            print(f"[motion] choreo request failed: {last_err}", flush=True)
+            time.sleep(4)
+        except Exception as e:      # noqa: BLE001
+            last_err = f"{model}: {type(e).__name__}: {e}"
+            print(f"[motion] choreo request failed: {last_err}", flush=True)
+            time.sleep(4)
+    raise RuntimeError(f"choreography failed on all models: {last_err}")
+
+
+def _validate_choreo(data: dict, duration: float) -> dict:
+    if not isinstance(data.get("actors"), list) or not data["actors"]:
+        raise ValueError("no actors in choreography")
+    data["time"] = data.get("time") if data.get("time") in TIMES else "day"
+    data["ground"] = data.get("ground") if data.get("ground") in GROUNDS else "grass"
+    if not isinstance(data.get("groundY"), (int, float)) or not (500 <= data["groundY"] <= 1000):
+        data["groundY"] = 920
+    data["camera"] = data.get("camera") if isinstance(data.get("camera"), dict) else \
+        {"start": {"x": 0, "y": 0, "zoom": 1.0}, "end": {"x": 70, "y": -25, "zoom": 1.1}}
+    props = []
+    for p in (data.get("props") or [])[:8]:
+        if isinstance(p, dict) and p.get("type") in PROPS:
+            p["x"] = max(-100, min(2000, p.get("x", 300)))
+            if isinstance(p.get("y"), (int, float)):
+                p["y"] = max(60, min(980, p["y"]))
+            p["scale"] = max(0.25, min(2.2, p.get("scale", 1) or 1))
+            props.append(p)
+    data["props"] = props
+    actors = []
+    for a in (data.get("actors") or [])[:3]:
+        if not isinstance(a, dict) or a.get("type") not in ACTORS:
+            continue
+        acts = []
+        for act in (a.get("actions") or [])[:7]:
+            if not isinstance(act, dict) or not isinstance(act.get("t"), list) or len(act["t"]) < 2:
+                continue
+            t0, t1 = sorted([max(0.0, float(act["t"][0])), min(duration, float(act["t"][1]))])
+            if t1 - t0 < 0.15:
+                continue
+            if act.get("do") == "gesture" and act.get("name") not in GESTURES:
+                act["name"] = "wave"
+            if act.get("do") == "emote" and act.get("name") not in EMOTES:
+                act["name"] = "happy"
+            act["t"] = [t0, t1]
+            if act.get("do") in ("walk", "gesture", "jump", "face", "emote", "sit"):
+                acts.append(act)
+        a["actions"] = acts
+        a["x"] = max(120, min(1800, a.get("x", 400) or 400))
+        a["scale"] = max(0.35, min(1.3, a.get("scale", 1) or 1))
+        actors.append(a)
+    if not actors:
+        raise ValueError("no valid actors after validation")
+    data["actors"] = actors
+    return data
+
+
+def assemble_scene_html(choreo: dict, duration: float, speak_from: float,
+                        speak_to: float, out_html: Path) -> Path:
+    payload = json.dumps(choreo, ensure_ascii=False)
+    if "</script" in payload.lower():
+        payload = payload.replace("</script", "<\\/script")
+    html = f"""<!doctype html><html><head><meta charset="utf-8">
+<style>html,body{{margin:0;padding:0;width:{WIDTH}px;height:{HEIGHT}px;overflow:hidden;background:#0e1440}}#stage{{position:absolute;inset:0}}</style>
+</head><body><div id="stage"></div>
+<script>{_rig_js()}</script>
+<script>
+window.__SCENE = {payload};
+window.IVScene.build(window.__SCENE, {duration}, {speak_from}, {speak_to});
+</script></body></html>"""
+    out_html.write_text(html)
+    return out_html
 
 
 class MotionRenderer:
-    """One headless Chrome per job; pages reused per scene."""
+    """One headless Chrome per job; page reused per scene."""
 
     def __enter__(self):
         from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(
-            executable_path=CHROME, headless=True,
+            executable_path="/usr/bin/google-chrome", headless=True,
             args=["--no-sandbox", "--disable-dev-shm-usage", "--force-color-profile=srgb"])
         self._page = self._browser.new_page(
             viewport={"width": WIDTH, "height": HEIGHT}, device_scale_factor=1)
@@ -89,35 +184,26 @@ class MotionRenderer:
             pass
         return False
 
-    # ---------- validation ----------
-
     def validate(self, html_path: Path, duration: float) -> None:
         page = self._page
         page.goto(html_path.as_uri(), wait_until="load", timeout=15000)
-        has_render = page.evaluate("typeof window.render === 'function'")
-        if not has_render:
-            raise ValueError("page does not define window.render(t)")
+        ok = page.evaluate("typeof window.IVScene === 'object' && typeof window.IVScene.render === 'function'")
+        if not ok:
+            raise ValueError("rig/scene driver failed to load")
         shots = []
-        for t in (0.0, duration * 0.5, duration * 0.92):
-            page.evaluate(f"window.render({t!r})")
+        for t in (0.0, duration * 0.5, duration * 0.9):
+            page.evaluate(f"window.IVScene.render({t!r})")
             shots.append(page.screenshot())
         _require_real_picture(shots)
 
-    # ---------- frame capture ----------
-
-    def capture(self, html_path: Path, duration: float, out_dir: Path,
-                progress=None) -> int:
+    def capture(self, html_path: Path, duration: float, out_dir: Path) -> int:
         page = self._page
         page.goto(html_path.as_uri(), wait_until="load", timeout=15000)
         n = max(2, round(duration * FPS))
         out_dir.mkdir(parents=True, exist_ok=True)
         for f in range(n):
-            t = f / FPS
-            page.evaluate(f"window.render({t!r})")
+            page.evaluate(f"window.IVScene.render({f / FPS!r})")
             page.screenshot(path=str(out_dir / f"f{f:05d}.png"), type="png")
-            if progress and f % max(1, n // 8) == 0:
-                progress(f, n)
-        # sanity: first and last frame must be real pictures
         blobs = [(out_dir / "f00000.png").read_bytes()]
         last = out_dir / f"f{n-1:05d}.png"
         if last.exists():
@@ -126,47 +212,8 @@ class MotionRenderer:
         return n
 
 
-def request_scene_html(text_cfg: dict, scene: dict, duration: float,
-                       character: str, speak=None, mood: str = "cozy") -> str:
-    """LLM-only step (no browser) — safe to run in parallel threads.
-    Tries each model in text_cfg["models"] order once. `speak` = (from, to)
-    seconds — the character is talking during that window (mouth animation)."""
-    if speak:
-        speak_line = (f"MOUTH SYNC: the character SPEAKS from t={speak[0]:.1f} to "
-                      f"t={speak[1]:.1f} — animate an obvious talking mouth (open/close "
-                      f"3-4 cycles per second) exactly during that window, with the head "
-                      f"and whole body bobbing/gesturing along to the speech rhythm "
-                      f"(arms wave, lean forward/back); gentle smile outside it. Blink "
-                      f"naturally 2-3 times overall.")
-    else:
-        speak_line = ("No speaking in this scene — big expressive face and wild body "
-                      "language instead.")
-    prompt = PROMPT_TEMPLATE.format(duration=duration, visual=scene["visual"],
-                                    character=character, width=WIDTH, height=HEIGHT,
-                                    speak_line=speak_line, mood=mood)
-    last_err = None
-    for model in text_cfg["models"]:
-        try:
-            from cartoon import _post_json          # reuse http helper
-            r = _post_json(f"{text_cfg['base_url']}/chat/completions",
-                           text_cfg["api_key"], {
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.4, "max_tokens": MAX_TOKENS}, timeout=300)
-            return _extract_html(r["choices"][0]["message"]["content"])
-        except urllib.error.HTTPError as e:
-            last_err = f"{model}: HTTP {e.code}"
-            print(f"[motion] html request failed: {last_err}", flush=True)
-            time.sleep(4)
-        except Exception as e:                       # noqa: BLE001
-            last_err = f"{model}: {type(e).__name__}: {e}"
-            print(f"[motion] html request failed: {last_err}", flush=True)
-            time.sleep(4)
-    raise RuntimeError(f"scene html failed on all models: {last_err}")
-
-
 def _require_real_picture(png_blobs) -> None:
-    """Reject blank/solid frames (broken HTML renders as near-uniform pixels)."""
+    """Reject blank/solid frames (a broken scene renders as near-uniform pixels)."""
     import io
     import numpy as np
     from PIL import Image

@@ -234,7 +234,11 @@ def _worker(job: dict) -> None:
             _stage_motion(job, p, d, script, durs)
         else:
             _stage_images(job, p, d, script)
-        _stage_music(d)
+        try:
+            premise = json.loads((d / "premise.json").read_text())
+        except Exception:                       # noqa: BLE001
+            premise = {}
+        _stage_music(d, script, premise)
         _stage_render(job, d, script, durs)
         video = d / "cartoon.mp4"
         _update(jid, status="done", stage="done", progress=1.0,
@@ -488,17 +492,17 @@ def _stage_motion(job: dict, p: dict, d: Path, script: dict, durs: dict) -> None
     try:
         premise = json.loads((d / "premise.json").read_text())
         character, mood = premise["character"], premise.get("mood", "cozy")
-    except Exception:                       # noqa: BLE001 — premise optional
+    except Exception:                       # noqa: BLE001
         character, mood = "a small round orange robot with big teal eyes", "cozy"
-    # deepseek writes HTML ~5x faster than mimo — flip the order for this stage
+    # deepseek is faster + steadier at structured JSON — flip the model order
     cfg_motion = {**p["text"], "models": list(reversed(p["text"]["models"]))}
 
-    # phase A — parallel LLM calls (network-bound, no browser)
-    raw: dict[int, str] = {}
+    # phase A — parallel LLM choreography (network-bound, no browser)
+    raw: dict[int, dict] = {}
     errors: dict[int, str] = {}
     lens = {i: scene_len(durs.get(f"n{i}", 0.0)) for i in range(1, n + 1)}
     with ThreadPoolExecutor(max_workers=3) as pool:
-        futs = {pool.submit(cmotion.request_scene_html, cfg_motion, sc, lens[i],
+        futs = {pool.submit(cmotion.request_choreo, cfg_motion, sc, lens[i],
                             character,
                             (0.4, 0.4 + durs.get(f"n{i}", 0.0) / 1.10)
                             if durs.get(f"n{i}") else None,
@@ -509,7 +513,7 @@ def _stage_motion(job: dict, p: dict, d: Path, script: dict, durs: dict) -> None
             i = futs[fut]
             done += 1
             _update(job["id"], stage="animation", progress=0.30 + 0.12 * done / n,
-                    message=f"Writing animation {done} of {n}…")
+                    message=f"Blocking out scene {done} of {n}…")
             try:
                 raw[i] = fut.result()
             except Exception as e:          # noqa: BLE001
@@ -528,7 +532,9 @@ def _stage_motion(job: dict, p: dict, d: Path, script: dict, durs: dict) -> None
             # candidate 1: the parallel result from phase A
             if i in raw:
                 try:
-                    html_path.write_text(raw[i])
+                    cmotion.assemble_scene_html(raw[i], lens[i],
+                                                0.4, 0.4 + durs.get(f"n{i}", 0.0) / 1.10,
+                                                html_path)
                     mr.validate(html_path, lens[i])
                     mr.capture(html_path, lens[i], frames_dir)
                     ok = True
@@ -538,17 +544,19 @@ def _stage_motion(job: dict, p: dict, d: Path, script: dict, durs: dict) -> None
             # candidate 2: one serial retry (mimo first) — only if needed
             if not ok:
                 try:
-                    html = cmotion.request_scene_html(
+                    choreo = cmotion.request_choreo(
                         p["text"], sc, lens[i], character,
                         (0.4, 0.4 + durs.get(f"n{i}", 0.0) / 1.10)
                         if durs.get(f"n{i}") else None, mood)
-                    html_path.write_text(html)
+                    cmotion.assemble_scene_html(choreo, lens[i],
+                                                0.4, 0.4 + durs.get(f"n{i}", 0.0) / 1.10,
+                                                html_path)
                     mr.validate(html_path, lens[i])
                     mr.capture(html_path, lens[i], frames_dir)
                     ok = True
                 except Exception as e:      # noqa: BLE001
                     errors[i] = str(e)
-                    print(f"[cartoon] scene {i}: html request failed: {e}", flush=True)
+                    print(f"[cartoon] scene {i}: choreography failed: {e}", flush=True)
             if ok:
                 errors.pop(i, None)
                 print(f"[cartoon] scene {i}: motion frames OK", flush=True)
@@ -561,32 +569,52 @@ def _stage_motion(job: dict, p: dict, d: Path, script: dict, durs: dict) -> None
     _update(job["id"], stage="animation", progress=0.55, message="Scenes animated.")
 
 
-# ---------- stage 4: lullaby ----------
+# ---------- stage 4: mood music + natural ambience ----------
 
 def _place(sig, t, n, sr):
     import numpy as np
     i0 = int(t * sr); i1 = min(n, i0 + len(sig))
-    if i0 >= n:
+    if i0 >= n or i1 <= i0:
         return np.zeros(n)
     out = np.zeros(n)
     out[i0:i1] = sig[: i1 - i0]
     return out
 
 
-def _stage_music(d: Path) -> None:
+def _detect_ambience(script: dict) -> str | None:
+    text = " ".join((sc.get("visual") or "").lower() for sc in script.get("scenes", []))
+    if any(k in text for k in ("rain", "storm", "drizzle")):
+        return "rain"
+    if any(k in text for k in ("snow", "winter", "blizzard")):
+        return "wind"
+    if any(k in text for k in ("beach", "ocean", "sea ", "waves", "river", "pond", "lake", "boat")):
+        return "waves"
+    if any(k in text for k in ("night", "moon", "star", "firefl")):
+        return "crickets"
+    if any(k in text for k in ("garden", "forest", "tree", "jungle", "flower", "park", "meadow", "village", "farm")):
+        return "birds"
+    if any(k in text for k in ("room", "kitchen", "indoor", "library", "house", "home")):
+        return None
+    return "birds"
+
+
+def _stage_music(d: Path, script: dict | None = None, premise: dict | None = None,
+                 total: float = 64.0) -> None:
     wav = d / "music.wav"
     if wav.exists():
         return
     import numpy as np
+    mood = (premise or {}).get("mood", "cozy").lower()
+    amb = _detect_ambience(script or {})
     SR = 44100
-    total = 64.0
     n = int(SR * total)
+    rng = np.random.default_rng(42)
     audio = np.zeros(n)
 
     def pluck(freq, dur, vol):
         N = int(SR * dur)
         buf_n = int(SR / freq)
-        buf = (np.random.rand(buf_n) * 2 - 1)
+        buf = rng.random(buf_n) * 2 - 1
         out = np.zeros(N)
         for j in range(N):
             k = j % buf_n
@@ -594,18 +622,70 @@ def _stage_music(d: Path) -> None:
             buf[k] = 0.996 * 0.5 * (buf[k] + buf[(k + 1) % buf_n])
         return out * np.exp(-np.linspace(0, 4.5, N)) * vol
 
-    C5, D5, E5, G5, A5, C6 = 523.25, 587.33, 659.25, 783.99, 880.00, 1046.50
-    melody = [C5, E5, G5, A5, G5, E5, D5, C5, E5, G5, C6, A5, G5, E5, D5, C5,
-              C5, E5, G5, A5, C6, A5, G5, E5, G5, E5, D5, C5, D5, E5, G5, C5]
-    t, mi = 0.0, 0
+    def tick(vol):  # soft percussion
+        N = int(SR * 0.03)
+        return rng.random(N) * np.exp(-np.linspace(0, 9, N)) * vol
+
+    # ---- music by mood ----
+    if mood in ("playful", "funny"):
+        step, notes_hz, bass_every, perc_every = 0.34, \
+            [587.33, 659.25, 783.99, 880.00, 1046.5, 1174.7], 8, 2
+    elif mood == "adventurous":
+        step, notes_hz, bass_every, perc_every = 0.46, \
+            [440.0, 523.25, 587.33, 659.25, 783.99, 880.0], 4, 2
+    else:  # cozy / dreamy lullaby
+        step, notes_hz, bass_every, perc_every = 1.05, \
+            [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50], 4, 0
+    note_len = min(1.6, step * 1.9)
+    mi = 0; t = 0.0
     while t < total - 2:
         if mi % 8 != 7:
-            audio += _place(pluck(melody[mi % len(melody)], 1.6, 0.5), t, n, SR)
-        if mi % 4 == 0:
-            audio += _place(pluck(261.63, 2.0, 0.35), t, n, SR)
-        t += 1.05; mi += 1
+            audio += _place(pluck(notes_hz[(mi * 3) % len(notes_hz)], note_len, 0.5), t, n, SR)
+        if mi % bass_every == 0:
+            audio += _place(pluck(notes_hz[0] / 2, note_len * 1.6, 0.30), t, n, SR)
+        if perc_every and mi % perc_every == 0:
+            audio += _place(tick(0.16), t, n, SR)
+        t += step; mi += 1
     audio /= max(1e-9, np.abs(audio).max())
-    audio *= 0.35
+    audio *= 0.30
+
+    # ---- ambience layer ----
+    ambn = np.zeros(n)
+    if amb == "birds":
+        for _ in range(int(total * 2.2)):
+            tt = float(rng.uniform(0.3, total - 0.6))
+            f0, f1 = float(rng.uniform(2400, 3300)), float(rng.uniform(1800, 2500))
+            N = int(SR * rng.uniform(0.07, 0.16))
+            chirp = np.sin(2 * np.pi * np.linspace(f0, f1, N) * np.linspace(0, 0.13, N)) \
+                * np.hanning(N) * 0.16
+            ambn += _place(chirp, tt, n, SR)
+    elif amb == "crickets":
+        t = 0.0
+        while t < total - 1:
+            burst = int(SR * rng.uniform(0.4, 0.9))
+            tt = np.arange(burst) / SR
+            ambn += _place(np.sin(2 * np.pi * 4300 * tt)
+                           * (0.5 + 0.5 * np.sign(np.sin(2 * np.pi * 26 * tt)))
+                           * np.hanning(burst) * 0.055, t, n, SR)
+            t += burst / SR + float(rng.uniform(0.15, 0.6))
+    elif amb == "waves":
+        noise = rng.standard_normal(n)
+        k = np.hanning(int(SR * 0.35)); k /= k.sum()
+        slow = np.convolve(noise, k, mode="same")
+        env = 0.5 + 0.5 * np.sin(2 * np.pi * total * 0.0 / 9 * np.linspace(0, 1, n) * 9)
+        ambn += slow * env * 0.16
+    elif amb == "rain":
+        ambn += rng.standard_normal(n) * 0.045
+        k = np.hanning(int(SR * 0.004)); k /= k.sum()
+        ambn = np.convolve(ambn, k, mode="same") * 1.6
+    elif amb == "wind":
+        noise = rng.standard_normal(n)
+        k = np.hanning(int(SR * 0.6)); k /= k.sum()
+        ambn += np.convolve(noise, k, mode="same") * (0.5 + 0.5 * np.sin(np.linspace(0, 6 * np.pi, n))) * 0.10
+    audio += ambn
+
+    audio /= max(1e-9, np.abs(audio).max())
+    audio *= 0.42
     fi, fo = int(SR * 2), int(SR * 4)
     audio[:fi] *= np.linspace(0, 1, fi)
     audio[-fo:] *= np.linspace(1, 0, fo)
