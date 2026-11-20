@@ -1,0 +1,11 @@
+services:
+  engine:
+    build: .
+    ports:
+      - "8177:8177"
+    volumes:
+      - ivdata:/app/.ivdata
+    restart: unless-stopped
+
+volumes:
+  ivdata:

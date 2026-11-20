@@ -88,6 +88,7 @@ function renderFoot() {
 const ROUTES = {
   landing:    { title: "Welcome",              render: pages.landing,   landing: true },
   dashboard:  { title: "Dashboard",        render: pages.dashboard,  group: "Overview" },
+  gallery:    { title: "Gallery",          render: pages2.gallery,   group: "Overview" },
   /* Create — every studio that makes something */
   studio:     { title: "Studio",           render: pages.studio,     group: "Create" },
   director:   { title: "Director's Studio",render: pages2.director,  group: "Create" },
@@ -107,6 +108,7 @@ const ROUTES = {
   dubhub:     { title: "DubHub",           render: pages2.dubhub,    group: "Tools" },
   /* System */
   connections:{ title: "Connections",      render: pages2.connections,group: "System" },
+  admin:      { title: "Admin",            render: pages2.admin,     group: "System" },
   history:    { title: "History",          render: pages.history,    group: "System" },
   settings:   { title: "Settings",         render: pages.settings,   group: "System" },
   help:       { title: "Help",             render: pages.help,       group: "System" },
@@ -126,7 +128,7 @@ function buildNav() {
     recorder: "record", library: "stack", design: "wand", changer: "swap",
     batch: "list", isolate: "isolate", transcribe: "doc", dubbing: "video",
     agent: "bolt", connections: "nodes", history: "clock", settings: "sliders",
-    help: "help", dubhub: "globe",
+    help: "help", dubhub: "globe", gallery: "grid", admin: "doc",
   };
   nav.innerHTML = groups.map((g) => `
     <div class="group">${esc(g.name)}</div>
@@ -278,6 +280,9 @@ async function autodetectEngine() {
 async function boot() {
   buildNav();
   render();
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
   await refreshSystem();
   if (!state.system && await autodetectEngine()) {
     toast(apiBase() ? "Connected to the InsaneVoice engine" : "Connected to your local InsaneVoice engine", "ok");

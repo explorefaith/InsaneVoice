@@ -152,26 +152,49 @@ def library(limit: int = 6) -> list[dict]:
             for j in done[:limit]]
 
 
-def start_job(client_id: str, idea: str, mode: str = "motion", lang: str = "en") -> dict:
+def start_job(client_id: str, idea: str, mode: str = "motion", lang: str = "en",
+              cast: str = "") -> dict:
     with _lock:
-        if active_job_for(client_id):
+        mine = active_job_for(client_id)
+        if mine:
             raise RuntimeError("Your previous cartoon is still generating — one at a time.")
         q = quota_for(client_id)
         if q["remaining"] <= 0:
             raise PermissionError(
                 "Daily free cartoon used. Come back tomorrow — resets at midnight.")
         jid = uuid.uuid4().hex[:12]
-        job = {"id": jid, "client": client_id, "status": "running",
-               "stage": "script", "progress": 0.02,
-               "message": "Writing the script…", "idea": (idea or "").strip(),
+        busy = any(j.get("status") == "running" for j in _jobs.values())
+        job = {"id": jid, "client": client_id,
+               "status": "queued" if busy else "running",
+               "stage": "queue" if busy else "script", "progress": 0.0,
+               "message": "Waiting for the current cartoon to finish…" if busy else "Writing the script…",
+               "idea": (idea or "").strip(),
                "mode": "storybook" if mode == "storybook" else "motion",
                "lang": (lang or "en").lower()[:8],
+               "cast": (cast or "").strip(),
                "started": time.time(), "error": None}
         _jobs[jid] = job
         _prune_old_jobs()
         _save_jobs()
-        threading.Thread(target=_worker, args=(job,), daemon=True).start()
+        if job["status"] == "running":
+            threading.Thread(target=_worker, args=(job,), daemon=True).start()
         return dict(job)
+
+
+def _maybe_start_next() -> None:
+    """Job queue: launch the oldest queued job when nothing is running."""
+    with _lock:
+        if any(j.get("status") == "running" for j in _jobs.values()):
+            return
+        queued = [j for j in _jobs.values() if j.get("status") == "queued"]
+        if not queued:
+            return
+        nxt = min(queued, key=lambda j: j.get("started", 0))
+        nxt["status"] = "running"
+        nxt["stage"] = "script"
+        nxt["message"] = "Writing the script…"
+        _save_jobs()
+        threading.Thread(target=_worker, args=(nxt,), daemon=True).start()
 
 
 def _prune_old_jobs() -> None:
@@ -238,7 +261,30 @@ def _worker(job: dict) -> None:
             premise = json.loads((d / "premise.json").read_text())
         except Exception:                       # noqa: BLE001
             premise = {}
-        _stage_music(d, script, premise)
+        # collect SFX events + narration windows from the choreographies
+        sfx_events, windows, off = [], [], 0.0
+        n = len(script["scenes"])
+        for i in range(1, n + 1):
+            di = scene_len(durs.get(f"n{i}", 0.0))
+            try:
+                ch = json.loads((d / f"choreo{i}.json").read_text())
+                water = ch.get("ground") == "water" or any(
+                    pp.get("type") in ("river", "pond") for pp in ch.get("props", []))
+                for a in ch.get("actors", []):
+                    for act in a.get("actions", []):
+                        if act.get("do") == "jump":
+                            apex = (act["t"][0] + act["t"][1]) / 2
+                            sfx_events.append({"type": "boing", "t": off + apex})
+                            sfx_events.append({"type": "thud", "t": off + act["t"][1] + 0.02})
+                            if water:
+                                sfx_events.append({"type": "splash", "t": off + act["t"][1] + 0.1})
+            except Exception:                   # noqa: BLE001
+                pass
+            nd = durs.get(f"n{i}", 0.0)
+            windows.append((off + 0.4, off + 0.4 + nd / 1.10))
+            off += di - 0.5
+        _stage_music(d, script, premise, total=max(64.0, off + 3.0),
+                     sfx_events=sfx_events, narration_windows=windows)
         _stage_render(job, d, script, durs)
         video = d / "cartoon.mp4"
         _update(jid, status="done", stage="done", progress=1.0,
@@ -252,6 +298,8 @@ def _worker(job: dict) -> None:
                    "Your quota was not used — try again tomorrow.")
         _update(jid, status="error", message=msg[:400],
                 error=msg[:400], finished=time.time())
+    finally:
+        _maybe_start_next()
 
 
 # ---------- stage 0: premise (fresh story + character every run) ----------
@@ -263,14 +311,19 @@ def _stage_premise(job: dict, p: dict, d: Path) -> dict:
     idea = (job.get("idea") or "").strip()
     used = [j.get("title") for j in _jobs.values() if j.get("title")]
     avoid = ("Avoid these already-used premises: " + "; ".join(used[:10]) + ". ") if used else ""
+    cast_line = ""
+    if (job.get("cast") or "").strip():
+        cast_line = (f'The main character MUST be exactly this (keep it, do not invent '
+                     f'a new one): {job["cast"].strip()}. ')
     if idea:
-        task = f'Build the cartoon premise around this user idea: "{idea}".'
+        task = f'Build the cartoon premise around this user idea: "{idea}". ' + cast_line
     else:
         task = ("Invent a COMPLETELY RANDOM, fresh premise: pick a surprising main "
                 "character (an animal, object, or little creature — not a robot), an "
                 "unexpected setting (space, jungle, kitchen, ocean floor, rooftop, "
                 "library, mountain, toy shop...), a tiny problem, and a warm or funny "
-                "resolution with a small twist. Vary the genre boldly. " + avoid)
+                "resolution with a small twist. Vary the genre boldly. "
+                + cast_line + avoid)
     prompt = f"""{task}
 
 Return STRICT JSON only, no markdown fences:
@@ -529,14 +582,26 @@ def _stage_motion(job: dict, p: dict, d: Path, script: dict, durs: dict) -> None
                 continue
             html_path = d / f"scene{i}.html"
             ok = False
+            spk = (0.4, 0.4 + durs.get(f"n{i}", 0.0) / 1.10)
+            env = None
+            try:
+                env = cmotion.mouth_envelope(d / f"narr{i}.mp3", lens[i])
+            except Exception:               # noqa: BLE001 — sine-cycle fallback
+                pass
+
+            def _finish(ch):
+                (d / f"choreo{i}.json").write_text(json.dumps(ch, indent=1))
+                cmotion.assemble_scene_html(ch, lens[i], spk[0], spk[1], html_path, env)
+                mr.validate(html_path, lens[i])
+                mr.capture(html_path, lens[i], frames_dir)
+                subprocess.run(["ffmpeg", "-y", "-v", "error",
+                                "-i", str(frames_dir / "f00000.png"),
+                                "-vf", "scale=480:-1", str(d / f"still{i}.jpg")], check=True)
+
             # candidate 1: the parallel result from phase A
             if i in raw:
                 try:
-                    cmotion.assemble_scene_html(raw[i], lens[i],
-                                                0.4, 0.4 + durs.get(f"n{i}", 0.0) / 1.10,
-                                                html_path)
-                    mr.validate(html_path, lens[i])
-                    mr.capture(html_path, lens[i], frames_dir)
+                    _finish(raw[i])
                     ok = True
                 except Exception as e:      # noqa: BLE001
                     print(f"[cartoon] scene {i}: parallel candidate rejected ({e})",
@@ -545,14 +610,8 @@ def _stage_motion(job: dict, p: dict, d: Path, script: dict, durs: dict) -> None
             if not ok:
                 try:
                     choreo = cmotion.request_choreo(
-                        p["text"], sc, lens[i], character,
-                        (0.4, 0.4 + durs.get(f"n{i}", 0.0) / 1.10)
-                        if durs.get(f"n{i}") else None, mood)
-                    cmotion.assemble_scene_html(choreo, lens[i],
-                                                0.4, 0.4 + durs.get(f"n{i}", 0.0) / 1.10,
-                                                html_path)
-                    mr.validate(html_path, lens[i])
-                    mr.capture(html_path, lens[i], frames_dir)
+                        p["text"], sc, lens[i], character, spk, mood)
+                    _finish(choreo)
                     ok = True
                 except Exception as e:      # noqa: BLE001
                     errors[i] = str(e)
@@ -599,7 +658,8 @@ def _detect_ambience(script: dict) -> str | None:
 
 
 def _stage_music(d: Path, script: dict | None = None, premise: dict | None = None,
-                 total: float = 64.0) -> None:
+                 total: float = 64.0, sfx_events: list | None = None,
+                 narration_windows: list | None = None) -> None:
     wav = d / "music.wav"
     if wav.exists():
         return
@@ -684,6 +744,43 @@ def _stage_music(d: Path, script: dict | None = None, premise: dict | None = Non
         ambn += np.convolve(noise, k, mode="same") * (0.5 + 0.5 * np.sin(np.linspace(0, 6 * np.pi, n))) * 0.10
     audio += ambn
 
+    # ---- sound effects at action moments (jump apex boing + landing thud) ----
+    def sfx_boing(vol=0.5):
+        N = int(SR * 0.38)
+        tt = np.arange(N) / SR
+        f = 420 * np.exp(-tt * 6) + 130
+        return np.sin(2 * np.pi * f * tt) * np.exp(-tt * 9) * vol
+
+    def sfx_thud(vol=0.6):
+        N = int(SR * 0.14)
+        tt = np.arange(N) / SR
+        return np.sin(2 * np.pi * 84 * tt) * np.exp(-tt * 26) * vol
+
+    def sfx_splash(vol=0.35):
+        N = int(SR * 0.42)
+        noise = rng.standard_normal(N)
+        k = np.hanning(int(SR * 0.02)); k /= k.sum()
+        return np.convolve(noise, k, mode="same") * np.exp(-np.linspace(0, 7, N)) * vol
+
+    for ev in (sfx_events or []):
+        if ev.get("type") == "boing":
+            audio += _place(sfx_boing(), ev["t"], n, SR)
+        elif ev.get("type") == "thud":
+            audio += _place(sfx_thud(), ev["t"], n, SR)
+        elif ev.get("type") == "splash":
+            audio += _place(sfx_splash(), ev["t"], n, SR)
+
+    # ---- duck music under narration windows ----
+    for w0, w1 in (narration_windows or []):
+        a, b = max(0.0, w0 - 0.3), min(total, w1 + 0.3)
+        i0, i1 = int(a * SR), int(b * SR)
+        if i1 > i0:
+            fade = int(0.35 * SR)
+            duck = np.ones(i1 - i0)
+            duck[:fade] *= np.linspace(1, 0.38, fade)
+            duck[-fade:] *= np.linspace(0.38, 1, fade)
+            audio[i0:i1] *= duck
+
     audio /= max(1e-9, np.abs(audio).max())
     audio *= 0.42
     fi, fo = int(SR * 2), int(SR * 4)
@@ -760,6 +857,120 @@ def _stage_render(job: dict, d: Path, script: dict, durs: dict) -> None:
                     "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                     "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
                     str(final)], check=True)
+
+
+def gallery(limit: int = 24) -> list[dict]:
+    done = [j for j in _jobs.values() if j.get("status") == "done"]
+    done.sort(key=lambda j: j.get("finished", 0), reverse=True)
+    return [{"id": j["id"], "title": j.get("title", "Cartoon"),
+             "duration": j.get("duration"), "finished": j.get("finished"),
+             "client": j.get("client", "")} for j in done[:limit]]
+
+
+def job_still(jid: str, scene: int) -> Path | None:
+    p = JOBS_DIR / f"job_{jid}" / f"still{scene}.jpg"
+    return p if p.exists() else None
+
+
+def job_stills(jid: str) -> list[int]:
+    d = JOBS_DIR / f"job_{jid}"
+    if not d.exists():
+        return []
+    out = []
+    for i in range(1, 10):
+        if (d / f"still{i}.jpg").exists():
+            out.append(i)
+    return out
+
+
+def admin_stats() -> dict:
+    jobs = [{"id": j["id"], "client": j.get("client", ""), "status": j.get("status"),
+             "stage": j.get("stage"), "title": j.get("title"),
+             "mode": j.get("mode"), "lang": j.get("lang"),
+             "started": j.get("started"), "finished": j.get("finished"),
+             "error": (j.get("error") or "")[:120]}
+            for j in _jobs.values()]
+    jobs.sort(key=lambda j: j.get("started") or 0, reverse=True)
+    return {"jobs": jobs[:40], "quota": _quota_map(),
+            "providers": PROVIDERS_FILE.exists()}
+
+
+def reroll_scene(jid: str, scene: int, p: dict) -> dict:
+    """Regenerate ONE scene (choreography + frames + clip) and re-cut the video."""
+    job = _jobs.get(jid)
+    if not job or job.get("status") not in ("done", "error"):
+        raise RuntimeError("can only re-roll finished cartoons")
+    d = JOBS_DIR / f"job_{jid}"
+    script_f, durs_f = d / "script.json", d / "durations.json"
+    if not script_f.exists() or not durs_f.exists():
+        raise RuntimeError("job data missing — cannot re-roll")
+    script = json.loads(script_f.read_text())
+    durs = json.loads(durs_f.read_text())
+    n = len(script["scenes"])
+    if not (1 <= scene <= n):
+        raise ValueError(f"scene must be 1..{n}")
+    try:
+        premise = json.loads((d / "premise.json").read_text())
+        character, mood = premise["character"], premise.get("mood", "cozy")
+    except Exception:                       # noqa: BLE001
+        character, mood = "a small round orange robot with big teal eyes", "cozy"
+    sc = script["scenes"][scene - 1]
+    nd = durs.get(f"n{scene}", 0.0)
+    di = scene_len(nd)
+    spk = (0.4, 0.4 + nd / 1.10)
+    for name in (f"clip{scene}.mp4", f"scene{scene}.html", f"still{scene}.jpg",
+                 "cartoon.mp4", f"choreo{scene}.json"):
+        (d / name).unlink(missing_ok=True)
+    frames_dir = d / f"frames{scene}"
+    if frames_dir.exists():
+        subprocess.run(["rm", "-rf", str(frames_dir)], check=False)
+    _update(jid, status="running", stage="animation", progress=0.5,
+            message=f"Re-rolling scene {scene}…", error=None)
+
+    def worker():
+        try:
+            import cartoon_motion as cmotion
+            with cmotion.MotionRenderer() as mr:
+                ok = False
+                try:
+                    choreo = cmotion.request_choreo(p["text"], sc, di, character, spk, mood)
+                    env = None
+                    try:
+                        env = cmotion.mouth_envelope(d / f"narr{scene}.mp3", di)
+                    except Exception:       # noqa: BLE001
+                        pass
+                    (d / f"choreo{scene}.json").write_text(json.dumps(choreo, indent=1))
+                    html = cmotion.assemble_scene_html(choreo, di, spk[0], spk[1],
+                                                       d / f"scene{scene}.html", env)
+                    mr.validate(html, di)
+                    mr.capture(html, di, frames_dir)
+                    subprocess.run(["ffmpeg", "-y", "-v", "error",
+                                    "-i", str(frames_dir / "f00000.png"),
+                                    "-vf", "scale=480:-1", str(d / f"still{scene}.jpg")],
+                                   check=True)
+                    ok = True
+                except Exception as e:      # noqa: BLE001 — image fallback
+                    print(f"[cartoon] re-roll scene {scene}: {e} — image fallback", flush=True)
+                if not ok:
+                    png = d / f"scene{scene}.png"
+                    png.unlink(missing_ok=True)
+                    _gen_image(p, f"{sc['visual']}. Character: {character}. {STYLE_BASE}", png)
+                subprocess.run(["ffmpeg", "-y", "-v", "error",
+                                "-i", str(d / f"scene{scene}.png"),
+                                "-vf", "scale=480:-1", str(d / f"still{scene}.jpg")],
+                               check=True)
+                _stage_render(job, d, script, durs)
+                _update(jid, status="done", stage="done", progress=1.0,
+                        message=f"Scene {scene} re-rolled!", duration=round(_probe(d / "cartoon.mp4"), 1),
+                        finished=time.time())
+        except Exception as e:              # noqa: BLE001
+            _update(jid, status="error", message=str(e)[:300], error=str(e)[:300],
+                    finished=time.time())
+        finally:
+            _maybe_start_next()
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"id": jid, "scene": scene, "status": "running"}
 
 
 _load_jobs()

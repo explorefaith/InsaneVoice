@@ -1,0 +1,12 @@
+{
+  "name": "InsaneVoice — Voice & Cartoon Studio",
+  "short_name": "InsaneVoice",
+  "description": "Local voice cloning studio + AI cartoon generator",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F6F7F9",
+  "theme_color": "#e8874c",
+  "icons": [
+    { "src": "/static/assets/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

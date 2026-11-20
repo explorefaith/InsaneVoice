@@ -20,23 +20,31 @@ RIG_JS_PATH = Path(__file__).resolve().parent / "assets" / "cartoon_rig.js"
 FPS = 15
 WIDTH, HEIGHT = 1920, 1080
 
-ACTORS = ["man", "woman", "boy", "girl", "oldman", "cat", "dog", "bird"]
+ACTORS = ["man", "woman", "boy", "girl", "oldman", "cat", "dog", "cow", "fox", "lion",
+          "monkey", "rabbit", "elephant", "bird", "frog", "penguin", "owl"]
 PROPS = ["tree", "pine", "bush", "flower", "river", "pond", "house", "fence", "bench", "rock",
          "table", "chair", "bookshelf", "sun", "moon", "clouds", "stars", "rain", "snow",
-         "fireflies", "mountains", "hills", "road", "butterfly", "bee", "fish"]
+         "fireflies", "mountains", "hills", "road", "school", "hospital", "train", "car",
+         "waterfall", "bridge", "streetlamp", "tent", "butterfly", "bee", "fish"]
 GROUNDS = ["grass", "sand", "wood", "floor", "stone", "snow"]
+# props that must sit ON the ground line (LLM y values are ignored for these)
+STANDING_PROPS = {"tree", "pine", "bush", "house", "fence", "bench", "rock", "table",
+                  "chair", "bookshelf", "school", "hospital", "streetlamp", "tent",
+                  "flower", "waterfall", "hills", "road", "mountains"}
 TIMES = ["day", "sunset", "night"]
 GESTURES = ["wave", "point", "cheer", "think", "carry", "nod", "shake", "bow", "dance", "spin", "jump", "sit"]
 EMOTES = ["happy", "sad", "surprised", "angry", "neutral"]
 
 CATALOG = f"""ACTORS (rigged, they walk/gesture/lip-sync automatically):
-  man, woman, boy, girl, oldman, cat, dog, bird
+  man, woman, boy, girl, oldman, cat, dog, cow, fox, lion, monkey, rabbit, elephant,
+  bird, frog (hops), penguin (waddles), owl (perched)
   human params: skin ("#f6c99f" fair | "#e0ac69" tan | "#a9714b" brown | "#6b4429" dark),
     hair "#hex", hairstyle ("short"|"long"|"bun"|"curly"|"bald"), shirt "#hex", pants "#hex",
     glasses true/false, hat true/false. oldman = elderly. boy/girl render as children.
 PROPS (place 3-6 for a rich scene): tree, pine, bush, flower, river, pond, house, fence,
   bench, rock, table, chair, bookshelf, sun, moon, clouds, stars, rain, snow, fireflies,
-  mountains, hills, road, butterfly (flies on its own), bee (flies), fish (swims)
+  mountains, hills, road, school, hospital, train, car (drives), waterfall, bridge,
+  streetlamp, tent, butterfly (flies), bee (flies), fish (swims)
 GROUND: grass | sand | wood | floor | stone | snow
 TIME: day | sunset | night
 ACTOR ACTIONS (t = [startSec, endSec] within [0, duration]):
@@ -107,10 +115,13 @@ def _validate_choreo(data: dict, duration: float) -> dict:
     data["camera"] = data.get("camera") if isinstance(data.get("camera"), dict) else \
         {"start": {"x": 0, "y": 0, "zoom": 1.0}, "end": {"x": 70, "y": -25, "zoom": 1.1}}
     props = []
+    gy = data["groundY"]
     for p in (data.get("props") or [])[:8]:
         if isinstance(p, dict) and p.get("type") in PROPS:
             p["x"] = max(-100, min(2000, p.get("x", 300)))
-            if isinstance(p.get("y"), (int, float)):
+            if p["type"] in STANDING_PROPS:
+                p["y"] = gy          # always stands on the ground line
+            elif isinstance(p.get("y"), (int, float)):
                 p["y"] = max(60, min(980, p["y"]))
             p["scale"] = max(0.25, min(2.2, p.get("scale", 1) or 1))
             props.append(p)
@@ -144,20 +155,45 @@ def _validate_choreo(data: dict, duration: float) -> dict:
 
 
 def assemble_scene_html(choreo: dict, duration: float, speak_from: float,
-                        speak_to: float, out_html: Path) -> Path:
+                        speak_to: float, out_html: Path,
+                        mouth_env: list | None = None) -> Path:
     payload = json.dumps(choreo, ensure_ascii=False)
     if "</script" in payload.lower():
         payload = payload.replace("</script", "<\\/script")
+    mouth = json.dumps([round(float(v), 3) for v in (mouth_env or [])])
     html = f"""<!doctype html><html><head><meta charset="utf-8">
 <style>html,body{{margin:0;padding:0;width:{WIDTH}px;height:{HEIGHT}px;overflow:hidden;background:#0e1440}}#stage{{position:absolute;inset:0}}</style>
 </head><body><div id="stage"></div>
 <script>{_rig_js()}</script>
 <script>
 window.__SCENE = {payload};
+window.__MOUTH = {mouth};
 window.IVScene.build(window.__SCENE, {duration}, {speak_from}, {speak_to});
 </script></body></html>"""
     out_html.write_text(html)
     return out_html
+
+
+def mouth_envelope(mp3_path: Path, duration: float, fps: int = FPS) -> list:
+    """RMS loudness envelope of the narration — drives real lip-sync."""
+    import numpy as np
+    import subprocess
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(mp3_path),
+                          "-f", "f32le", "-ac", "1", "-ar", "8000", "pipe:1"],
+                         capture_output=True).stdout
+    x = np.frombuffer(raw, dtype=np.float32)
+    hop = max(1, int(8000 / fps))
+    frames = max(1, int(np.ceil(len(x) / hop)))
+    need = max(frames, int(duration * fps) + int(0.6 * fps))
+    env = np.zeros(need)
+    for i in range(frames):
+        seg = x[i * hop:(i + 1) * hop]
+        if len(seg):
+            env[i] = min(1.0, float(np.sqrt((seg ** 2).mean())) * 9.0)
+    # smooth 2 frames
+    if len(env) > 2:
+        env[1:-1] = (env[:-2] + env[1:-1] * 2 + env[2:]) / 4
+    return [round(float(v), 3) for v in env[: int(duration * fps)]]
 
 
 class MotionRenderer:

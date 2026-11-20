@@ -1323,6 +1323,7 @@ export async function cartoon(page, seq, fresh) {
         <span class="pill ${quota && quota.remaining > 0 ? "ok" : ""}">${quota ? `Today: ${quota.used}/${quota.limit} · ${quota.remaining > 0 ? `${quota.remaining} left` : "used up"}` : "Quota unknown"}</span>
       </div>
       <div id="ct-progress" style="margin-top:14px"></div>
+      <div id="ct-stills" class="row wrap" style="gap:8px;margin-top:12px"></div>
     </div>
     <div id="ct-result"></div>
     <div class="panel" style="margin-top:18px" id="ct-lib-panel">
@@ -1353,15 +1354,72 @@ export async function cartoon(page, seq, fresh) {
         <video src="${url}" controls style="width:100%;border-radius:10px"></video>
         <div class="row wrap" style="margin-top:12px">
           <a class="btn accent" href="${url}" download="insanevoice_cartoon.mp4">${icon("download", 15)} Download MP4</a>
+          <button class="btn" data-export="shorts">${icon("video", 14)} Shorts 9:16</button>
+          <button class="btn" data-export="smooth">${icon("waveform", 14)} Smooth 60fps</button>
+          <button class="btn" data-export="thumb">${icon("doc", 14)} Thumbnail</button>
           <span class="pill ok">Done · ${job.duration || "?"}s · 1080p</span>
         </div>
+        <div class="row wrap" style="margin-top:10px;align-items:center">
+          <span class="small muted">Re-roll:</span>
+          <select id="ct-reroll-scene" style="width:130px">${[1,2,3,4,5,6,7,8,9].map(i => `<option value="${i}">Scene ${i}</option>`).join("")}</select>
+          <button class="btn sm" id="ct-reroll">${icon("swap", 13)} Re-roll scene</button>
+          <button class="btn sm" id="ct-ep2">${icon("plus", 13)} Episode 2 (same cast)</button>
+          <span class="small muted" id="ct-xmsg"></span>
+        </div>
       </div>`;
+    const xmsg = $("#ct-xmsg");
+    const doExport = async (kind, label) => {
+      xmsg.textContent = `${label} — working… (this can take a few minutes)`;
+      try {
+        const res = await fetch(abs(`/api/cartoon/${job.id}/export`), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `insanevoice_${kind}.${kind === "thumb" ? "jpg" : "mp4"}`;
+        a.click();
+        xmsg.textContent = `${label} — downloaded ✓`;
+      } catch (e) { xmsg.textContent = `${label} failed: ${e.message}`; }
+    };
+    page.querySelectorAll("[data-export]").forEach((b) => b.onclick = () => doExport(b.dataset.export, b.textContent.trim()));
+    $("#ct-reroll").onclick = async () => {
+      const scene = +$("#ct-reroll-scene").value;
+      xmsg.textContent = `Re-rolling scene ${scene}…`;
+      try {
+        await cApi(`/api/cartoon/${job.id}/reroll`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scene }),
+        });
+        $("#ct-reroll-scene").closest(".row").style.opacity = ".5";
+        listen(job, true);
+      } catch (e) { xmsg.textContent = `Re-roll failed: ${e.message}`; }
+    };
+    $("#ct-ep2").onclick = async () => {
+      xmsg.textContent = "Starting episode 2…";
+      try {
+        const r = await cApi("/api/cartoon", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idea: "", mode: job.mode || "motion", lang: job.lang || "en", cast: job.cast || "" }),
+        });
+        $("#ct-result").innerHTML = "";
+        listen(r.job, true);
+      } catch (e) { xmsg.textContent = `Episode 2 failed: ${e.message}`; }
+    };
   };
 
-  const showJob = (job) => {
+  const showJob = (job, stills) => {
     setProgress(job.progress || 0, job.message || job.stage);
+    if (stills && stills.length && job.status === "running") {
+      $("#ct-stills").innerHTML = stills.map((i) => `
+        <img src="${abs(`/api/cartoon/${job.id}/still/${i}`)}" width="150"
+             style="border-radius:8px;border:1px solid var(--line)" loading="lazy">`).join("");
+    }
     if (job.status === "done") {
       clearInterval(window.__ctPoll); window.__ctPoll = null;
+      $("#ct-stills").innerHTML = "";
       showDone(job);
       refreshLibrary();
     } else if (job.status === "error") {
@@ -1370,15 +1428,15 @@ export async function cartoon(page, seq, fresh) {
     }
   };
 
-  const listen = (job) => {
+  const listen = (job, keepBtn) => {
     const btn = $("#ct-go");
-    if (btn) { btn.disabled = true; btn.innerHTML = `${icon("video", 15)} Generating…`; }
+    if (btn && !keepBtn) { btn.disabled = true; btn.innerHTML = `${icon("video", 15)} Generating…`; }
     showJob(job);
     window.__ctPoll = setInterval(async () => {
       try {
         const r = await cApi(`/api/cartoon/${job.id}`);
         if (!fresh()) { clearInterval(window.__ctPoll); window.__ctPoll = null; return; }
-        showJob(r.job);
+        showJob(r.job, r.stills);
       } catch { /* transient */ }
     }, 2500);
   };
@@ -1414,4 +1472,81 @@ export async function cartoon(page, seq, fresh) {
       busy(e.currentTarget, false);
     }
   });
+}
+
+/* ============================================================
+   Gallery — every cartoon made on this engine, shareable
+   ============================================================ */
+
+export async function gallery(page) {
+  const $ = (sel) => page.querySelector(sel);
+  page.innerHTML = shell(`
+    ${pageHead("Gallery", "Every cartoon generated on this engine — share the link, anyone can watch.", "Overview")}
+    <div id="gl-grid" class="dash-clips" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px">
+      <div class="small muted">Loading…</div>
+    </div>
+  `);
+  const vids = await API.get("/api/cartoon/gallery").then((r) => r.videos).catch(() => []);
+  const grid = $("#gl-grid");
+  if (!vids.length) {
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="e-ico">${icon("video", 34)}</div>
+      <h3>No cartoons yet</h3><p>The first one you generate will appear here.</p></div>`;
+    return;
+  }
+  grid.innerHTML = vids.map((v) => `
+    <div class="panel" style="padding:12px">
+      <img src="${abs(`/api/cartoon/${v.id}/still/1`)}" loading="lazy" style="width:100%;border-radius:10px;aspect-ratio:16/9;object-fit:cover" onerror="this.style.opacity=.25">
+      <div class="row" style="margin-top:8px;align-items:center">
+        <b class="grow" title="${esc(v.title)}">${esc(v.title)}</b>
+        <span class="pill">${v.duration || "?"}s</span>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn sm accent" data-watch="${v.id}">${icon("play", 13)} Watch</button>
+        <a class="btn sm" href="${abs(`/api/cartoon/${v.id}/video`)}" download>${icon("download", 13)}</a>
+        <button class="btn sm" data-share="${v.id}">${icon("nodes", 13)} Share</button>
+      </div>
+    </div>`).join("");
+  grid.querySelectorAll("[data-watch]").forEach((b) => b.onclick = () => openWatch(b.dataset.watch));
+  grid.querySelectorAll("[data-share]").forEach((b) => b.onclick = async () => {
+    const url = `${location.origin}/#/gallery`;
+    try { await navigator.clipboard.writeText(url); toast("Link copied", url, "ok"); }
+    catch { prompt("Copy this link:", url); }
+  });
+  function openWatch(id) {
+    modal({ title: "Now playing", body: `<video src="${abs(`/api/cartoon/${id}/video`)}" controls autoplay style="width:100%;border-radius:10px"></video>` });
+  }
+}
+
+/* ============================================================
+   Admin — jobs, quota usage, provider status
+   ============================================================ */
+
+export async function admin(page) {
+  const $ = (sel) => page.querySelector(sel);
+  page.innerHTML = shell(`
+    ${pageHead("Admin", "Engine internals — jobs, quotas, providers. For the machine owner.", "System")}
+    <div class="panel"><h3 style="margin:0 0 8px">Providers</h3><div id="ad-prov" class="small">…</div></div>
+    <div class="panel" style="margin-top:16px"><h3 style="margin:0 0 8px">Daily quotas</h3><div id="ad-quota" class="small">…</div></div>
+    <div class="panel" style="margin-top:16px"><h3 style="margin:0 0 8px">Recent jobs</h3><div id="ad-jobs" class="small">…</div></div>
+  `);
+  const st = await API.get("/api/admin/stats").catch(() => null);
+  if (!st) { $("#ad-prov").textContent = "Engine unreachable."; return; }
+  $("#ad-prov").innerHTML = st.providers
+    ? `<span class="pill ok">configured</span> <span class="muted">data/cartoon_providers.json present</span>`
+    : `<span class="pill">missing</span> <span class="muted">create data/cartoon_providers.json</span>`;
+  const q = st.quota || {};
+  const qrows = Object.entries(q).map(([cid, v]) =>
+    `<tr><td style="font-family:var(--mono);font-size:12px">${esc(cid.slice(0, 24))}</td>
+     <td>${v.date}</td><td>${v.count}/${1}</td></tr>`).join("");
+  $("#ad-quota").innerHTML = qrows
+    ? `<table class="stat-table"><tr><th>client</th><th>day</th><th>used</th></tr>${qrows}</table>`
+    : `<span class="muted">No quota used yet.</span>`;
+  const jrows = (st.jobs || []).map((j) => `
+    <tr><td style="font-family:var(--mono);font-size:12px">${esc(j.id)}</td>
+    <td>${esc(j.status)}</td><td>${esc(j.mode || "")} · ${esc(j.lang || "")}</td>
+    <td>${esc((j.title || j.stage || "").slice(0, 28))}</td>
+    <td>${j.error ? `<span style="color:var(--verm)">${esc(j.error.slice(0, 40))}</span>` : ""}</td></tr>`).join("");
+  $("#ad-jobs").innerHTML = jrows
+    ? `<table class="stat-table"><tr><th>id</th><th>status</th><th>mode</th><th>title</th><th>err</th></tr>${jrows}</table>`
+    : `<span class="muted">No jobs yet.</span>`;
 }

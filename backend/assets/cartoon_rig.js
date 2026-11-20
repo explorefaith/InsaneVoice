@@ -135,11 +135,12 @@ window.IV = (function () {
     return rig;
   }
 
-  /* ================= QUADRUPED (cat/dog) ================= */
+  /* ================= QUADRUPED (cat/dog/cow/fox/lion/monkey/elephant/rabbit) ================= */
   function quadruped(P) {
     P = P || {};
     const dog = P.kind === "dog";
     const bodyC = P.color || (dog ? "#a9744f" : "#8d9099");
+    const big = !!P.big;
     const g = el("g", {});
     shadow(g, 52);
     const body = el("g", {}, g);
@@ -156,6 +157,26 @@ window.IV = (function () {
     el("circle", { cx: 0, cy: 0, r: 30, fill: bodyC }, headG);
     const earL = el("path", { d: dog ? "M-18 -24 L-26 -52 L-2 -34 Z" : "M-20 -20 L-30 -44 L-4 -32 Z", fill: bodyC }, headG);
     const earR = el("path", { d: dog ? "M2 -26 L10 -54 L24 -30 Z" : "M4 -22 L14 -46 L28 -28 Z", fill: bodyC }, headG);
+    const k = P.kind;
+    if (k === "cow") {
+      el("path", { d: "M-26 -26 Q-40 -40 -32 -50", stroke: "#dcd7cf", "stroke-width": 8, "stroke-linecap": "round", fill: "none" }, headG);
+      el("path", { d: "M26 -26 Q40 -40 32 -50", stroke: "#dcd7cf", "stroke-width": 8, "stroke-linecap": "round", fill: "none" }, headG);
+      el("ellipse", { cx: 0, cy: 10, rx: 16, ry: 10, fill: "#e8b8b0" }, headG);
+      el("circle", { cx: -20, cy: -58, r: 13, fill: "#4b4b4b" }, body);
+      el("circle", { cx: 16, cy: -72, r: 10, fill: "#4b4b4b" }, body);
+      el("circle", { cx: 34, cy: -52, r: 8, fill: "#4b4b4b" }, body);
+    } else if (k === "lion") {
+      el("circle", { cx: 0, cy: -2, r: 40, fill: "#c98a3d" }, headG);
+      el("circle", { cx: 0, cy: 0, r: 27, fill: bodyC }, headG);
+    } else if (k === "elephant") {
+      el("path", { d: "M6 -6 Q30 2 28 34 Q27 44 16 42", stroke: bodyC, "stroke-width": 13, "stroke-linecap": "round", fill: "none" }, headG);
+      el("ellipse", { cx: -26, cy: -4, rx: 18, ry: 24, fill: bodyC }, headG);
+      el("ellipse", { cx: 30, cy: -4, rx: 18, ry: 24, fill: bodyC }, headG);
+    } else if (k === "rabbit") {
+      el("ellipse", { cx: -12, cy: -48, rx: 9, ry: 30, fill: bodyC }, headG);
+      el("ellipse", { cx: 12, cy: -46, rx: 9, ry: 28, fill: bodyC }, headG);
+    }
+    if (k === "fox") { el("circle", { cx: -40, cy: -38, r: 10, fill: "#f2ede4" }, body); }
     el("circle", { cx: -11, cy: -6, r: 4.5, fill: "#23272f" }, headG);
     el("circle", { cx: 11, cy: -6, r: 4.5, fill: "#23272f" }, headG);
     el("ellipse", { cx: 0, cy: 6, rx: 6, ry: 4.5, fill: dog ? "#33231a" : "#d38b9c" }, headG);
@@ -441,6 +462,173 @@ window.IV = (function () {
       },
     };
   }
+  function frog() {
+    const g = el("g", {});
+    shadow(g, 46);
+    const body = el("g", {}, g);
+    el("ellipse", { cx: 0, cy: -34, rx: 44, ry: 34, fill: "#5fae5a" }, body);
+    el("ellipse", { cx: -16, cy: -20, rx: 12, ry: 8, fill: "rgba(255,255,255,.25)" }, body);
+    el("circle", { cx: -18, cy: -62, r: 14, fill: "#5fae5a" }, body);
+    el("circle", { cx: 18, cy: -62, r: 14, fill: "#5fae5a" }, body);
+    const eyeL = el("circle", { cx: -18, cy: -64, r: 8, fill: "#fff" }, body);
+    const eyeR = el("circle", { cx: 18, cy: -64, r: 8, fill: "#fff" }, body);
+    el("circle", { cx: -18, cy: -63, r: 4, fill: "#23272f" }, body);
+    el("circle", { cx: 18, cy: -63, r: 4, fill: "#23272f" }, body);
+    const mouth = el("path", { d: "M-20 -34 Q0 -22 20 -34", stroke: "#2e5a2a", "stroke-width": 4, fill: "none" }, body);
+    const legL = el("path", { d: "M-30 -14 Q-52 -8 -46 0", stroke: "#4e9d49", "stroke-width": 12, "stroke-linecap": "round", fill: "none" }, body);
+    const legR = el("path", { d: "M30 -14 Q52 -8 46 0", stroke: "#4e9d49", "stroke-width": 12, "stroke-linecap": "round", fill: "none" }, body);
+    return {
+      kind: "frog", node: g,
+      set: {
+        walk(phase, amp) { body.setAttribute("transform", `translate(0,${-Math.abs(Math.sin(phase)) * 6 * amp})`); },
+        mouth(open) { mouth.setAttribute("d", open > 0.4 ? "M-18 -36 Q0 -14 18 -36" : "M-20 -34 Q0 -22 20 -34"); },
+        jump(dy, sq) { body.setAttribute("transform", `translate(0,${dy}) scale(${1 + sq * 0.2},${1 - sq * 0.3})`); },
+        armL() {}, armR() {}, lean() {}, head() {}, crouch() {}, blink() {}, brows() {},
+        pos(x, y, s, f) { g.dataset.pos = `translate(${x},${y}) scale(${f ? -s : s},${s})`; g.dataset.flip = f ? "1" : ""; g.setAttribute("transform", g.dataset.pos + (f ? " scale(-1,1)" : "")); },
+        setFlip(f) { g.dataset.flip = f ? "1" : ""; g.setAttribute("transform", g.dataset.pos + (f ? " scale(-1,1)" : "")); },
+      },
+    };
+  }
+  function penguin() {
+    const g = el("g", {});
+    shadow(g, 44);
+    const body = el("g", {}, g);
+    el("ellipse", { cx: 0, cy: -60, rx: 40, ry: 58, fill: "#2e3138" }, body);
+    el("ellipse", { cx: 0, cy: -48, rx: 26, ry: 42, fill: "#f2f4f6" }, body);
+    el("circle", { cx: -13, cy: -96, r: 6, fill: "#fff" }, body);
+    el("circle", { cx: 13, cy: -96, r: 6, fill: "#fff" }, body);
+    el("circle", { cx: -13, cy: -95, r: 3.4, fill: "#23272f" }, body);
+    el("circle", { cx: 13, cy: -95, r: 3.4, fill: "#23272f" }, body);
+    el("path", { d: "M-8 -86 Q0 -80 8 -86 L0 -72 Z", fill: "#e8a33c" }, body);
+    const flipL = el("path", { d: "M-38 -72 Q-52 -56 -40 -40", stroke: "#2e3138", "stroke-width": 10, "stroke-linecap": "round", fill: "none" }, body);
+    el("line", { x1: -10, y1: -4, x2: -10, y2: 0, stroke: "#e8a33c", "stroke-width": 6 }, body);
+    el("line", { x1: 10, y1: -4, x2: 10, y2: 0, stroke: "#e8a33c", "stroke-width": 6 }, body);
+    const mouth = el("ellipse", { cx: 0, cy: -78, rx: 5, ry: 1.6, fill: "#8a4238" }, body);
+    return {
+      kind: "penguin", node: g,
+      set: {
+        walk(phase, amp) { body.setAttribute("transform", `rotate(${Math.sin(phase) * 7 * amp}) translate(0,${-Math.abs(Math.sin(phase * 2)) * 4 * amp})`); },
+        mouth(open) { mouth.setAttribute("ry", 1.6 + open * 4); },
+        jump(dy) { body.setAttribute("transform", `translate(0,${dy})`); },
+        armL() {}, armR() {}, lean() {}, head() {}, crouch() {}, blink() {}, brows() {},
+        pos(x, y, s, f) { g.dataset.pos = `translate(${x},${y}) scale(${f ? -s : s},${s})`; g.dataset.flip = f ? "1" : ""; g.setAttribute("transform", g.dataset.pos + (f ? " scale(-1,1)" : "")); },
+        setFlip(f) { g.dataset.flip = f ? "1" : ""; g.setAttribute("transform", g.dataset.pos + (f ? " scale(-1,1)" : "")); },
+      },
+    };
+  }
+  function owl(P) {
+    const c = (P && P.color) || "#9c7b4d";
+    const g = el("g", {});
+    shadow(g, 40);
+    const body = el("g", {}, g);
+    el("ellipse", { cx: 0, cy: -52, rx: 40, ry: 52, fill: c }, body);
+    el("ellipse", { cx: 0, cy: -40, rx: 26, ry: 34, fill: "#d9c4a0" }, body);
+    el("circle", { cx: -15, cy: -76, r: 16, fill: "#f2ede4" }, body);
+    el("circle", { cx: 15, cy: -76, r: 16, fill: "#f2ede4" }, body);
+    const pupL = el("circle", { cx: -15, cy: -76, r: 7, fill: "#23272f" }, body);
+    const pupR = el("circle", { cx: 15, cy: -76, r: 7, fill: "#23272f" }, body);
+    el("path", { d: "M-7 -70 L7 -70 L0 -58 Z", fill: "#e8a33c" }, body);
+    const earL = el("path", { d: "M-34 -92 L-26 -110 L-14 -94 Z", fill: c }, body);
+    const earR = el("path", { d: "M34 -92 L26 -110 L14 -94 Z", fill: c }, body);
+    return {
+      kind: "owl", node: g,
+      set: {
+        walk() {},
+        blink() { pupL.setAttribute("r", 1); pupR.setAttribute("r", 1); },
+        mouth() {}, jump(dy) { body.setAttribute("transform", `translate(0,${dy})`); },
+        armL() {}, armR() {}, lean() {}, head() {}, crouch() {}, brows() {},
+        pos(x, y, s, f) { g.dataset.pos = `translate(${x},${y}) scale(${f ? -s : s},${s})`; g.dataset.flip = f ? "1" : ""; g.setAttribute("transform", g.dataset.pos + (f ? " scale(-1,1)" : "")); },
+        setFlip(f) { g.dataset.flip = f ? "1" : ""; g.setAttribute("transform", g.dataset.pos + (f ? " scale(-1,1)" : "")); },
+      },
+    };
+  }
+  function school(P) {
+    const g = el("g", {});
+    el("rect", { x: -170, y: -210, width: 340, height: 212, rx: 10, fill: (P && P.color) || "#d9a25f" }, g);
+    el("path", { d: "M-196 -208 L0 -330 L196 -208 Z", fill: "#8a4a3a" }, g);
+    el("rect", { x: -40, y: -110, width: 80, height: 112, rx: 6, fill: "#7c5333" }, g);
+    for (let i = -1; i <= 1; i++) el("rect", { x: i * 110 - 32, y: -180, width: 64, height: 52, rx: 5, fill: "#9fd4e8", stroke: "#7c5333", "stroke-width": 5 }, g);
+    el("line", { x1: 150, y1: -330, x2: 150, y2: -420, stroke: "#7c5333", "stroke-width": 8 }, g);
+    el("path", { d: "M150 -420 L230 -400 L150 -380 Z", fill: "#e2574c" }, g);
+    return { node: g, tick() {} };
+  }
+  function hospital() {
+    const g = el("g", {});
+    el("rect", { x: -150, y: -230, width: 300, height: 232, rx: 10, fill: "#eef1f4" }, g);
+    el("rect", { x: -34, y: -100, width: 68, height: 102, rx: 6, fill: "#9fb2c4" }, g);
+    el("rect", { x: -26, y: -286, width: 52, height: 16, rx: 4, fill: "#e2574c" }, g);
+    el("rect", { x: -6, y: -306, width: 16, height: 56, rx: 4, fill: "#e2574c" }, g);
+    [[-110, -180], [62, -180], [-110, -80], [62, -80]].forEach(([x, y]) =>
+      el("rect", { x, y, width: 48, height: 44, rx: 5, fill: "#bcd8ea", stroke: "#8fa5b5", "stroke-width": 4 }, g));
+    return { node: g, tick() {} };
+  }
+  function train() {
+    const g = el("g", {});
+    el("rect", { x: -190, y: -190, width: 300, height: 130, rx: 16, fill: "#4a6741" }, g);
+    el("rect", { x: 130, y: -190, width: 150, height: 130, rx: 16, fill: "#5d7a50" }, g);
+    el("rect", { x: -160, y: -160, width: 70, height: 52, rx: 8, fill: "#9fd4e8" }, g);
+    el("path", { d: "M-190 -190 Q-230 -230 -210 -268", stroke: "#3a3d42", "stroke-width": 12, fill: "none" }, g);
+    const wheels = [];
+    [[-140], [-40], [60], [160]].forEach(([x]) => {
+      const w = el("circle", { cx: x, cy: -42, r: 34, fill: "#2e3138" }, g);
+      el("circle", { cx: x, cy: -42, r: 14, fill: "#565b63" }, g);
+      wheels.push(w);
+    });
+    el("rect", { x: -210, y: -8, width: 520, height: 12, fill: "#565b63" }, g);
+    return { node: g, tick(t) { wheels.forEach((w, i) => w.setAttribute("transform", `rotate(${(t * 260 + i * 30) % 360} ${w.getAttribute("cx")} -42)`)); } };
+  }
+  function car(P) {
+    const c = (P && P.color) || "#e2574c";
+    const g = el("g", {});
+    const body = el("g", {}, g);
+    el("rect", { x: -110, y: -78, width: 220, height: 52, rx: 16, fill: c }, body);
+    el("path", { d: "M-62 -78 L-40 -118 L52 -118 L74 -78 Z", fill: c }, body);
+    el("rect", { x: -30, y: -110, width: 74, height: 30, rx: 6, fill: "#bfe3f2" }, body);
+    const w1 = el("circle", { cx: -64, cy: -20, r: 26, fill: "#2e3138" }, body);
+    const w2 = el("circle", { cx: 64, cy: -20, r: 26, fill: "#2e3138" }, body);
+    el("circle", { cx: -64, cy: -20, r: 11, fill: "#b9bec6" }, body);
+    el("circle", { cx: 64, cy: -20, r: 11, fill: "#b9bec6" }, body);
+    return {
+      node: g,
+      tick(t) { w1.setAttribute("transform", `rotate(${(t * 420) % 360} -64 -20)`); w2.setAttribute("transform", `rotate(${(t * 420) % 360} 64 -20)`); body.setAttribute("transform", `translate(0,${Math.sin(t * 17) * 1.6})`); },
+    };
+  }
+  function waterfall() {
+    const g = el("g", {});
+    el("rect", { x: -70, y: -300, width: 140, height: 300, rx: 18, fill: "#8fd0ec" }, g);
+    for (let i = 0; i < 8; i++) {
+      const s = el("rect", { x: -58 + i * 16, y: -290, width: 7, height: 60, rx: 3.5, fill: "rgba(255,255,255,.55)" }, g);
+      s.dataset.ph = i * 0.8; s.dataset.sp = 300 + i * 40;
+      g.dataset["s" + i] = "1"; s.setAttribute("data-i", i);
+      s.dataset.x0 = -58 + i * 16;
+    }
+    el("ellipse", { cx: 0, cy: 6, rx: 120, ry: 26, fill: "rgba(255,255,255,.4)" }, g);
+    const streams = g.querySelectorAll("rect[data-i]");
+    return { node: g, tick(t) { streams.forEach(s => { const x0 = parseFloat(s.dataset.x0), sp = parseFloat(s.dataset.sp), ph = parseFloat(s.dataset.ph); const y = -290 + ((t * sp + ph * 100) % 300); s.setAttribute("y", y); s.setAttribute("x", x0 + Math.sin(t * 3 + ph) * 4); }); } };
+  }
+  function bridge() {
+    const g = el("g", {});
+    el("path", { d: "M-160 0 Q0 -120 160 0", stroke: "#8a5a38", "stroke-width": 18, fill: "none" }, g);
+    el("path", { d: "M-160 0 Q0 -120 160 0", stroke: "#a9744f", "stroke-width": 10, fill: "none" }, g);
+    for (let i = -3; i <= 3; i++) el("line", { x1: i * 44, y1: -8 - Math.cos(i * 0.5) * 30, x2: i * 44, y2: -8 - Math.cos(i * 0.5) * 30 - 46, stroke: "#8a5a38", "stroke-width": 8 }, g);
+    return { node: g, tick() {} };
+  }
+  function streetlamp(P) {
+    const g = el("g", {});
+    el("rect", { x: -7, y: -240, width: 14, height: 242, rx: 6, fill: "#3a3d42" }, g);
+    el("path", { d: "M-7 -240 Q-7 -262 40 -262 L60 -262", stroke: "#3a3d42", "stroke-width": 10, fill: "none" }, g);
+    const glow = el("circle", { cx: 60, cy: -250, r: 12, fill: ((P && P.time) === "night") ? "#ffe98a" : "#c9ccd2" }, g);
+    if ((P && P.time) === "night") { const halo = el("circle", { cx: 60, cy: -250, r: 42, fill: "rgba(255,233,138,.18)" }, g); }
+    return { node: g, tick() {} };
+  }
+  function tent() {
+    const g = el("g", {});
+    el("path", { d: "M-110 0 L0 -150 L110 0 Z", fill: "#e8874c" }, g);
+    el("path", { d: "M-38 0 L0 -110 L38 0 Z", fill: "#c96a34" }, g);
+    el("line", { x1: 0, y1: -150, x2: 0, y2: -178, stroke: "#7c5333", "stroke-width": 6 }, g);
+    return { node: g, tick() {} };
+  }
+
   function mountains() {
     const g = el("g", {});
     el("path", { d: "M-80 0 L360 -420 L760 0 Z", fill: "#8ea6c0" }, g);
@@ -464,13 +652,20 @@ window.IV = (function () {
   const FACTORIES = {
     man: human, woman: human, boy: human, girl: human, oldman: human,
     cat: () => quadruped({ kind: "cat" }), dog: () => quadruped({ kind: "dog" }),
-    bird, butterfly, bee, fish,
+    cow: () => quadruped({ kind: "cow", color: "#f2ede4" }),
+    fox: () => quadruped({ kind: "fox", color: "#e8874c" }),
+    lion: () => quadruped({ kind: "lion", color: "#d9a25f" }),
+    monkey: () => quadruped({ kind: "monkey", color: "#8d6e4f" }),
+    rabbit: () => quadruped({ kind: "rabbit", color: "#d8d3cb" }),
+    elephant: () => quadruped({ kind: "elephant", color: "#9aa3ab" }),
+    bird, frog, penguin, owl, butterfly, bee, fish,
     tree, pine, bush, flower, river, pond, house, fence, bench, rock,
     table, chair, bookshelf, sun, moon, clouds, stars, rain, snow,
-    fireflies, mountains, hills, road,
+    fireflies, mountains, hills, road, school, hospital, train, car,
+    waterfall, bridge, streetlamp, tent,
   };
-  const PROPS = Object.keys(FACTORIES).filter(k => !["man", "woman", "boy", "girl", "oldman", "cat", "dog", "bird"].includes(k));
-  const ACTORS = ["man", "woman", "boy", "girl", "oldman", "cat", "dog", "bird"];
+  const PROPS = Object.keys(FACTORIES).filter(k => !["man", "woman", "boy", "girl", "oldman", "cat", "dog", "cow", "fox", "lion", "monkey", "rabbit", "elephant", "bird", "frog", "penguin", "owl"].includes(k));
+  const ACTORS = ["man", "woman", "boy", "girl", "oldman", "cat", "dog", "cow", "fox", "lion", "monkey", "rabbit", "elephant", "bird", "frog", "penguin", "owl"];
   const GESTURES = ["wave", "point", "cheer", "think", "carry", "nod", "shake", "bow", "dance", "spin", "jump", "sit"];
 
   return { el, clamp01, ease, seg, lerp, TAU, FACTORIES, PROPS, ACTORS, GESTURES };
@@ -487,7 +682,8 @@ window.IVScene = (function () {
     grass: "#7cc45f", sand: "#ecd69a", wood: "#b98a5a", floor: "#caa27a",
     stone: "#a8b0b8", snow: "#eef3f8", water: "#4aa3df", road: "#7f8790",
   };
-  let actors = [], props = [], camA, camB, dur, spFrom, spTo, camNode, world;
+  let actors = [], props = [], camA, camB, dur, spFrom, spTo, camNode, world, fxg = null;
+  const fxLines = [];
 
   function build(scene, duration, speakFrom, speakTo) {
     dur = duration; spFrom = speakFrom == null ? -1 : speakFrom; spTo = speakTo == null ? -1 : speakTo;
@@ -541,6 +737,17 @@ window.IVScene = (function () {
         speaker: !!a.speaker,
         emote: a.emote || (timeOfDay === "night" ? "neutral" : "happy"),
         walks: [],
+        jumps: [],
+      });
+    });
+    // impact FX group (action lines at jump apex)
+    fxg = el("g", { opacity: 0 }, world);
+    for (let i = 0; i < 8; i++)
+      fxLines.push(el("line", { x1: 0, y1: -60, x2: 0, y2: -130, stroke: "#fff", "stroke-width": 7, "stroke-linecap": "round", transform: `rotate(${i * 45})` }, fxg));
+    // collect jump windows per actor for FX
+    actors.forEach(A => {
+      (A.a.actions || []).forEach(act => {
+        if (act.do === "jump" && act.t) A.jumps.push({ t0: act.t[0], t1: act.t[1] });
       });
     });
     // precompute walk tracks
@@ -562,11 +769,30 @@ window.IVScene = (function () {
   }
 
   function render(t) {
+    // jump FX: shake after landings + action lines at apex
+    let shake = 0, apex = null, apexX = 0;
+    actors.forEach(A => {
+      A.jumps.forEach(j => {
+        if (t >= j.t1 && t < j.t1 + 0.4) shake = Math.max(shake, 1 - (t - j.t1) / 0.4);
+        if (t >= j.t0 && t <= j.t1) {
+          const p = (t - j.t0) / (j.t1 - j.t0);
+          if (p > 0.3 && p < 0.8) { apex = p; apexX = A.x; }
+        }
+      });
+    });
     // camera
     const u = ease(clamp01(t / (dur || 1)));
     const cx = lerp(camA.x || 0, camB.x || 0, u), cy = lerp(camA.y || 0, camB.y || 0, u);
-    const cz = lerp(camA.zoom || 1, camB.zoom || 1, u);
-    camNode.setAttribute("transform", `translate(${W / 2},${H * 0.8}) scale(${cz}) translate(${-(W / 2) - cx},${-(H * 0.8) - cy})`);
+    const cz = lerp(camA.zoom || 1, camB.zoom || 1, u) + shake * 0.035;
+    const sx = Math.sin(t * 57) * 9 * shake, sy = Math.cos(t * 49) * 7 * shake;
+    camNode.setAttribute("transform", `translate(${W / 2 + sx},${H * 0.8 + sy}) scale(${cz}) translate(${-(W / 2) - cx},${-(H * 0.8) - cy})`);
+    // action lines at jump apex
+    if (fxg) {
+      if (apex != null) {
+        fxg.setAttribute("opacity", 0.55 + 0.25 * Math.sin(apex * Math.PI));
+        fxg.setAttribute("transform", `translate(${apexX},${sceneGroundY() - 130}) scale(${0.8 + apex * 0.7}) rotate(${t * 40})`);
+      } else fxg.setAttribute("opacity", 0);
+    }
     // props
     props.forEach(p => { if (p.f.tick) p.f.tick(t); });
     // actors
@@ -619,12 +845,19 @@ window.IVScene = (function () {
       } else if (!walking) {
         S.armL(4 + breathe); S.armR(-4 - breathe); S.lean(0); S.head(0);
       }
-      // talk lip-sync
+      // talk lip-sync — driven by the real narration envelope when available
       const speaking = A.speaker && t >= spFrom && t <= spTo;
       if (speaking) {
+        let open;
+        const M = window.__MOUTH;
+        if (M && M.length) {
+          const i = Math.max(0, Math.min(M.length - 1, Math.round((t - spFrom) * (M.length / Math.max(0.01, spTo - spFrom)))));
+          open = 0.1 + 0.9 * (M[i] || 0);
+        } else {
+          open = 0.25 + 0.75 * Math.abs(Math.sin(t * TAU * 4.2 + Math.sin(t * 6.7) * 0.8));
+        }
         const env = Math.min(1, (t - spFrom) / 0.35) * Math.min(1, (spTo - t) / 0.35);
-        const open = (0.25 + 0.75 * Math.abs(Math.sin(t * TAU * 4.2 + Math.sin(t * 6.7) * 0.8))) * env;
-        S.mouth(open, 0);
+        S.mouth(open * env, 0);
         if (r.kind === "human") S.head(Math.sin(t * TAU * 1.1) * 3.5);
       } else {
         S.mouth(0, emote === "sad" ? -0.4 : 0.8);

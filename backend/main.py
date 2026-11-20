@@ -960,7 +960,8 @@ def cartoon_start(request: Request, req: dict):
     try:
         job = cartoon.start_job(cid, (req or {}).get("idea") or "",
                                 (req or {}).get("mode") or "motion",
-                                (req or {}).get("lang") or "en")
+                                (req or {}).get("lang") or "en",
+                                (req or {}).get("cast") or "")
     except PermissionError as e:
         return _err(str(e), 403)
     except RuntimeError as e:
@@ -975,12 +976,85 @@ def cartoon_library():
     return _ok({"videos": cartoon.library()})
 
 
+@app.get("/api/cartoon/gallery")
+def cartoon_gallery():
+    vids = cartoon.gallery()
+    for v in vids:
+        v["thumb"] = f"/api/cartoon/{v['id']}/still/1"
+    return _ok({"videos": vids})
+
+
+@app.get("/api/admin/stats")
+def admin_stats():
+    return _ok(cartoon.admin_stats())
+
+
+@app.get("/api/cartoon/{jid}/still/{scene}")
+def cartoon_still(jid: str, scene: int):
+    p = cartoon.job_still(jid, scene)
+    if not p:
+        raise HTTPException(404)
+    return FileResponse(p, media_type="image/jpeg")
+
+
 @app.get("/api/cartoon/{jid}")
 def cartoon_job(jid: str):
     job = cartoon.get_job(jid)
     if not job:
         raise HTTPException(404)
-    return _ok({"job": job})
+    return _ok({"job": job, "stills": cartoon.job_stills(jid)})
+
+
+@app.post("/api/cartoon/{jid}/reroll")
+def cartoon_reroll(jid: str, req: dict):
+    try:
+        r = cartoon.reroll_scene(jid, int((req or {}).get("scene", 1)), cartoon._providers())
+        return _ok({"reroll": r})
+    except (RuntimeError, ValueError) as e:
+        return _err(str(e), 400)
+
+
+@app.post("/api/cartoon/{jid}/export")
+def cartoon_export(jid: str, req: dict):
+    p = cartoon.job_video(jid)
+    if not p:
+        raise HTTPException(404)
+    kind = (req or {}).get("kind", "shorts")
+    d = p.parent
+    import subprocess as sp
+    try:
+        if kind == "shorts":
+            out = d / "shorts.mp4"
+            if not out.exists():
+                sp.run(["ffmpeg", "-y", "-v", "error", "-i", str(p),
+                        "-vf", "scale=-2:1920,crop=1080:1920",
+                        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+                        "-c:a", "copy", str(out)], check=True, timeout=600)
+            media = "video/mp4"
+        elif kind == "smooth":
+            out = d / "smooth60.mp4"
+            if not out.exists():
+                sp.run(["ffmpeg", "-y", "-v", "error", "-i", str(p),
+                        "-vf", "minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:vsbmc=1",
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
+                        "-c:a", "copy", str(out)], check=True, timeout=1800)
+            media = "video/mp4"
+        elif kind == "thumb":
+            out = d / "thumb.jpg"
+            if not out.exists():
+                title = (cartoon.get_job(jid) or {}).get("title") or "InsaneVoice"
+                mid = str((cartoon.get_job(jid) or {}).get("duration") or 30) .split(".")[0]
+                safe = title.replace(":", "").replace("'", "").replace('"', "")
+                sp.run(["ffmpeg", "-y", "-v", "error", "-ss", str(max(1, int(mid) // 2)),
+                        "-i", str(p), "-frames:v", "1",
+                        "-vf", f"scale=1280:720,drawtext=fontfile={cartoon.FONT}:text={safe}:fontsize=56:fontcolor=white:borderw=5:bordercolor=black@0.7:x=(w-text_w)/2:y=40",
+                        "-q:v", "3", str(out)], check=True, timeout=120)
+            media = "image/jpeg"
+        else:
+            raise HTTPException(400)
+    except sp.TimeoutExpired:
+        return _err("export took too long — try again", 504)
+    return FileResponse(out, media_type=media, filename=out.name)
 
 
 @app.get("/api/cartoon/{jid}/video")
