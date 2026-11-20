@@ -88,21 +88,25 @@ function renderFoot() {
 const ROUTES = {
   landing:    { title: "Welcome",              render: pages.landing,   landing: true },
   dashboard:  { title: "Dashboard",        render: pages.dashboard,  group: "Overview" },
+  /* Create — every studio that makes something */
   studio:     { title: "Studio",           render: pages.studio,     group: "Create" },
   director:   { title: "Director's Studio",render: pages2.director,  group: "Create" },
-  dna:        { title: "Voice DNA",        render: pages.dna,        group: "Create" },
-  recorder:   { title: "Recorder",         render: pages.recorder,   group: "Create" },
+  batch:      { title: "Batch Studio",     render: pages.batch,      group: "Create" },
+  cartoon:    { title: "Cartoon Studio",   render: pages2.cartoon,   group: "Create" },
+  agent:      { title: "Agent Studio",     render: pages2.agent,     group: "Create" },
+  /* Voices — clone, design, transform */
+  dna:        { title: "Voice DNA",        render: pages.dna,        group: "Voices" },
+  recorder:   { title: "Recorder",         render: pages.recorder,   group: "Voices" },
   library:    { title: "Voice Library",    render: pages.library,    group: "Voices" },
   design:     { title: "Voice Design",     render: pages2.design,    group: "Voices" },
   changer:    { title: "Voice Changer",    render: pages2.changer,   group: "Voices" },
-  batch:      { title: "Batch Studio",     render: pages.batch,      group: "Voices" },
+  /* Tools */
   isolate:    { title: "Voice Isolator",   render: pages2.isolate,   group: "Tools" },
   transcribe: { title: "Transcribe",       render: pages2.transcribe,group: "Tools" },
   dubbing:    { title: "Dubbing Studio",   render: pages2.dubbing,   group: "Tools" },
   dubhub:     { title: "DubHub",           render: pages2.dubhub,    group: "Tools" },
-  agent:      { title: "Agent Studio",     render: pages2.agent,     group: "Agent" },
-  cartoon:    { title: "Cartoon Studio",   render: pages2.cartoon,   group: "Agent" },
-  connections:{ title: "Connections",      render: pages2.connections,group: "Agent" },
+  /* System */
+  connections:{ title: "Connections",      render: pages2.connections,group: "System" },
   history:    { title: "History",          render: pages.history,    group: "System" },
   settings:   { title: "Settings",         render: pages.settings,   group: "System" },
   help:       { title: "Help",             render: pages.help,       group: "System" },
@@ -281,19 +285,20 @@ async function boot() {
   }
   await refreshVoices();
   render();
-  // poll engine status while it loads
+  // poll engine status while it loads — only re-render on a real
+  // loading → ready transition; intermittent network failures must NOT
+  // re-render the whole page (that was the dashboard "constant refresh" bug)
+  let lastEng = state.system?.engine?.status ?? null;
   const poll = setInterval(async () => {
-    const s = state.system;
-    const need = !s || s.engine?.status === "loading";
-    if (need) {
-      await refreshSystem();
-      if (state.system?.engine?.status !== "loading") {
-        renderFoot();
-        if (state.route === "dashboard" || state.route === "settings") render();
-      }
+    await refreshSystem();
+    const eng = state.system?.engine?.status ?? null;
+    renderFoot();
+    if (lastEng === "loading" && eng && eng !== "loading") {
+      if (state.route === "dashboard" || state.route === "settings") render();
     }
+    lastEng = eng;
   }, 2500);
-  setTimeout(() => clearInterval(poll), 120000);
+  setTimeout(() => clearInterval(poll), 180000);
 }
 
 boot();

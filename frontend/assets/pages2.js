@@ -905,52 +905,98 @@ export async function connections(page) {
     modelsState[k] = [...(c[k]?.models || [])];
   }
 
+  const QUICK = {
+    text: ["gpt-4o-mini", "gemini-2.0-flash", "deepseek-chat"],
+    audio: ["fish-audio/s2.1-pro", "openai/gpt-4o-audio"],
+    visual: ["gemini-2.0-flash-exp", "gpt-4o"],
+  };
+  const HELP = {
+    text: `<b>OpenAI</b> platform.openai.com/api-keys · <b>Gemini</b> aistudio.google.com/apikey · <b>DeepSeek</b> platform.deepseek.com — create a key, paste it below.`,
+    audio: `Any OpenAI-compatible endpoint with <code>/audio/speech</code> (e.g. fish.audio, OpenAI).`,
+    visual: `Any endpoint that returns images (Gemini flash image, GPT-4o, recraft bridges).`,
+  };
+
   const chipsHTML = (kind, v) => `
-    <label class="field"><span>Model IDs — failover order (add one or many)</span>
+    <label class="field"><span>Model IDs — tried in order; if one fails the next is used automatically</span>
       <div class="chips" data-chips="${kind}" data-empty="No models yet — add the first one below">
         ${(v.models || []).map((m) => `
           <span class="chip">${esc(m)}<button class="x" data-rm="${esc(m)}" title="Remove">✕</button></span>`).join("")}
       </div>
       <div class="chip-add">
-        <input type="text" data-newmodel="${kind}" placeholder="model id, e.g. gpt-4o-mini / gemini-2.0-flash / deepseek-chat">
+        <input type="text" data-newmodel="${kind}" placeholder="model id, e.g. gpt-4o-mini">
         <button class="btn sm" data-add="${kind}">${icon("plus", 14)} &nbsp;Add</button>
+      </div>
+      <div class="row wrap" style="gap:6px;margin-top:8px">
+        <span class="small muted" style="margin-right:2px">Quick add:</span>
+        ${QUICK[kind].filter((m) => !(v.models || []).includes(m)).map((m) => `
+          <button class="chip" data-quick="${esc(m)}" style="cursor:pointer">${icon("plus", 11)} ${esc(m)}</button>`).join("")}
       </div>
     </label>`;
 
-  const card = (kind, label, extra = "") => {
+  const card = (kind, num, label, sub, extra = "") => {
     const v = c[kind] || {};
     return `
       <div class="panel" data-kind="${kind}">
-        <div class="spread"><h3 style="margin:0">${esc(label)}</h3>
-          <span class="pill ${v.has_key ? "ok" : ""}" data-state>${v.has_key ? "key saved" : "not configured"}</span></div>
-        <label class="field"><span>Base URL (OpenAI-compatible)</span>
-          <input type="url" data-f="base_url" value="${esc(v.base_url || "")}" placeholder="https://api.openai.com/v1"></label>
-        <label class="field"><span>API key ${v.has_key ? "(saved — type to replace)" : ""}</span>
-          <input type="password" data-f="api_key" placeholder="${v.has_key ? "•••••••• (leave empty to keep)" : "sk-…"}"></label>
+        <div class="spread" style="align-items:center">
+          <h3 style="margin:0;display:flex;align-items:center;gap:10px">
+            <span style="display:inline-flex;width:26px;height:26px;border-radius:99px;background:var(--sig);color:#fff;align-items:center;justify-content:center;font-size:13px">${num}</span>
+            ${esc(label)}</h3>
+          <span class="pill ${v.has_key ? "ok" : ""}" data-state>${v.has_key ? "✓ key saved" : "not configured"}</span>
+        </div>
+        <p class="small muted" style="margin:6px 0 12px">${esc(sub)}</p>
+        <div class="row wrap" style="gap:12px">
+          <label class="field" style="flex:1;min-width:260px"><span>Base URL — the provider's API address</span>
+            <input type="url" data-f="base_url" value="${esc(v.base_url || "")}" placeholder="https://api.openai.com/v1"></label>
+          <label class="field" style="flex:1;min-width:260px"><span>API key ${v.has_key ? "— already saved, type to replace" : ""}</span>
+            <input type="password" data-f="api_key" placeholder="${v.has_key ? "•••••••• (leave empty to keep)" : "paste your key (sk-…)"}"></label>
+        </div>
         ${chipsHTML(kind, v)}
         ${extra}
-        <div class="row" style="margin-top:14px"><button class="btn sm" data-test>Test connection</button>
+        <details style="margin-top:10px"><summary class="small muted" style="cursor:pointer">Where do I get a key & model id?</summary>
+          <p class="small muted" style="margin:8px 0 0">${HELP[kind]}</p></details>
+        <div class="row" style="margin-top:14px;align-items:center"><button class="btn sm" data-test>${icon("bolt", 13)} Test connection</button>
           <span class="small muted" data-testmsg></span></div>
       </div>`;
   };
 
   page.innerHTML = shell(`
-    ${pageHead("Connections", "Bring your own OpenAI-compatible endpoints. Keys stay in a local file on this machine — never in the cloud. If a model id fails, the agent retries the next one with the same context.", "Agent")}
-    <div class="stack">
-      ${card("text", "Text model — script writing",
+    ${pageHead("Connections", "Plug in your own AI accounts — used by the Agent Studio for scripts and extra powers. Everything is optional: the Studio, cloning and Cartoon Studio work fully offline without this.", "System")}
+    <div class="panel">
+      <h3 style="margin:0 0 10px">How it works — 3 steps</h3>
+      <div class="row wrap" style="gap:18px">
+        <div style="flex:1;min-width:200px" class="small"><b>1. Choose a provider</b><br><span class="muted">OpenAI, Gemini, DeepSeek, or any OpenAI-compatible service.</span></div>
+        <div style="flex:1;min-width:200px" class="small"><b>2. Paste the base URL + API key</b><br><span class="muted">Keys are stored in a local file on this machine — never uploaded.</span></div>
+        <div style="flex:1;min-width:200px" class="small"><b>3. Add model IDs & test</b><br><span class="muted">List several — if one fails, the next takes over automatically.</span></div>
+      </div>
+    </div>
+    <div class="stack" style="margin-top:18px">
+      ${card("text", 1, "Text model — writes scripts",
+        "Powers the Agent Studio: turns one prompt into a full script.",
         `<label class="checkbox"><input type="checkbox" data-f="vision" ${c.text?.vision ? "checked" : ""}>
-          <span>This model accepts images (vision) — needed for attachments</span></label>`)}
-      ${card("audio", "Audio model — narration (optional)",
+          <span>This model also accepts images (vision) — enable only if the model supports it</span></label>`)}
+      ${card("audio", 2, "Audio model — AI narration (optional)",
+        "Alternative narration voice. Leave empty to use your cloned voices instead.",
         `<label class="field"><span>Voice name for /audio/speech (e.g. alloy)</span>
           <input type="text" data-f="voice" value="${esc(c.audio?.voice || "")}"></label>`)}
-      ${card("visual", "Visual model — scene images (optional)")}
+      ${card("visual", 3, "Visual model — scene images (optional)",
+        "Adds AI-generated imagery to agent videos. Leave empty to use the built-in motion engine.")}
     </div>
-    <div class="row" style="margin-top:18px">
-      <button class="btn accent" id="cn-save">Save connections</button>
-      <span class="small muted" id="cn-msg"></span>
+    <div class="panel" style="margin-top:18px">
+      <div class="row" style="align-items:center">
+        <button class="btn accent" id="cn-save">${icon("check", 15)} Save connections</button>
+        <span class="small muted" id="cn-msg">Saved keys never leave this machine.</span>
+      </div>
     </div>`);
 
   const wireChips = () => {
+    $$("[data-quick]", page).forEach((b) => {
+      b.onclick = () => {
+        const kind = b.closest(".panel").dataset.kind;
+        const m = b.dataset.quick;
+        if (!modelsState[kind].includes(m)) modelsState[kind].push(m);
+        renderChips(kind);
+      };
+    });
     $$("[data-add]", page).forEach((b) => {
       b.onclick = () => {
         const kind = b.dataset.add;

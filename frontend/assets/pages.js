@@ -512,6 +512,11 @@ export async function dashboard(page, seq, fresh) {
         <div class="eyebrow">InsaneVoice · <b>local</b> cloning studio</div>
         <h1 class="hero-title">${greet}.</h1>
         <p class="hero-sub">Your voices, ready to speak — everything runs on this machine, offline and free.</p>
+        <div class="row wrap" style="gap:10px;margin-top:var(--s3)">
+          <a class="btn accent" href="#/studio">${icon("type", 15)} Open Studio</a>
+          <a class="btn" href="#/cartoon">${icon("video", 15)} Make a cartoon</a>
+          <a class="btn" href="#/recorder">${icon("record", 15)} Clone a voice</a>
+        </div>
         <div class="hero-stats">
           <div class="stat"><div class="n">${voices}</div><div class="l">Voices in library</div></div>
           <div class="stat"><div class="n" id="d-gen">…</div><div class="l">Generations</div></div>
@@ -526,12 +531,18 @@ export async function dashboard(page, seq, fresh) {
     ${s && eng === "error" ? `<div class="banner err">✕ <div><b>Engine failed to load.</b><br><span class="small">${esc(String(s.engine.error).split("\n")[0])}</span></div></div>` : ""}
 
     <section class="dash-section">
-      <h2 class="dash-h2">Your demos. <span class="lp-dim">Fresh renders from this machine.</span></h2>
+      <div class="spread" style="align-items:flex-end">
+        <h2 class="dash-h2" style="margin:0">Your demos. <span class="lp-dim">Fresh renders from this machine.</span></h2>
+        <a class="btn sm" href="#/history">All history ${icon("arrow", 13)}</a>
+      </div>
       <div class="dash-clips" id="d-clips"></div>
     </section>
 
     <section class="dash-section">
-      <h2 class="dash-h2">Your voices. <span class="lp-dim">${voices} cloned and ready.</span></h2>
+      <div class="spread" style="align-items:flex-end">
+        <h2 class="dash-h2" style="margin:0">Your voices. <span class="lp-dim">${voices} cloned and ready.</span></h2>
+        <a class="btn sm" href="#/library">Open library ${icon("arrow", 13)}</a>
+      </div>
       <div class="dash-voices" id="d-voices"></div>
     </section>
   `);
@@ -551,7 +562,8 @@ export async function dashboard(page, seq, fresh) {
       <div class="empty">
         <div class="e-ico">${icon("waveform", 34)}</div>
         <h3>Nothing rendered yet</h3>
-        <p>Open the Studio, pick a voice and type — your first demo will live here.</p>
+        <p>Pick a voice, type a line — your first demo will live here.</p>
+        <a class="btn sm accent" href="#/studio" style="margin-top:6px">${icon("type", 13)} Type your first words</a>
       </div>`;
   } else {
     clips.innerHTML = demos.map((h) => `
@@ -576,7 +588,8 @@ export async function dashboard(page, seq, fresh) {
   const strip = page.querySelector("#d-voices");
   if (!recentVoices.length) {
     strip.innerHTML = `<div class="empty"><div class="e-ico">${icon("stack", 34)}</div>
-      <h3>No voices yet</h3><p>Your cloned voices will gather here.</p></div>`;
+      <h3>No voices yet</h3><p>Record 10 seconds of yourself — that's all a clone needs.</p>
+      <a class="btn sm accent" href="#/recorder" style="margin-top:6px">${icon("record", 13)} Clone your voice</a></div>`;
   } else {
     strip.innerHTML = recentVoices.map((v) => `
       <div class="dv-chip" title="${esc(v.name)}">
